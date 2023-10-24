@@ -8,9 +8,12 @@ options {
 
 tokens {
     Root;
-    Func;
+    Body;
+    Signature;
     Arg;
     Array;
+    Expr;
+    ReturnType;
 }
 
 source: sourceItem* -> ^(Root sourceItem*);
@@ -24,21 +27,21 @@ typeRef:
 arraySpec: LParen (Comma)* RParen -> ^(Array Comma*);
 
 funcSignature: identifier LParen (argDef (Comma argDef)*)? RParen typeSpec?
-    -> ^(Func ^(identifier argDef*) typeSpec);
+    -> ^(identifier ^(Signature ^(ReturnType typeSpec)? argDef*)?);
 
 fragment argDef: identifier typeSpec?
     -> ^(Arg identifier typeSpec);
 
 sourceItem: 'function' funcSignature (statement* 'end' 'function')? 
-    -> ^(funcSignature statement*); 
+    -> ^(funcSignature ^(Body statement*)?); 
 
 statement:
-    Dim identifier (Comma identifier)* typeSpec -> ^(Dim typeSpec identifier+)
+    Dim identifier (Comma identifier)* typeSpec -> ^(Dim ^(typeSpec identifier+))
     | If expr thenClause elseClause? End If -> ^(If expr thenClause elseClause)
-    | While expr statement* Wend -> ^(While expr statement*)
-    | Do statement* Loop loopTerm expr -> ^(Loop ^(loopTerm expr) statement*)
+    | While expr statement* Wend -> ^(While expr ^(Body statement*)?)
+    | Do statement* Loop loopTerm expr -> ^(Loop ^(loopTerm expr) ^(Body statement*)?)
     | Break
-    | expr Semi -> expr
+    | expr Semi -> ^(Expr expr)
 ;
 
 thenClause: Then statement* -> ^(Then statement*);
@@ -53,7 +56,7 @@ compExpr: addExpr (CompOp^ addExpr)*;
 addExpr: multExpr (AddOp^ multExpr)*;
 multExpr: bitExpr (MultOp^ bitExpr)*;
 bitExpr: call (BitOp^ call)*;
-call: atom (LParen expr (Comma expr)* RParen)? -> ^(atom expr*);
+call: atom (LParen (expr (Comma expr)*)? RParen)? -> ^(atom expr*);
 atom:
     LParen expr RParen -> expr
     |identifier

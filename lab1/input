@@ -3,8 +3,14 @@ function someFun(a as int, vvb)
     0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
     if a > 5 then
         print("yes");
+        dim str as string
+        do
+            str + "literal";
+            count + 1;
+        loop until stringIsTooBig(str)
     else
         error("no", 3);
+        a || b && c;
     end if
 end function
 
@@ -22,3 +28,4 @@ function FunnyFunc(gf, vvb as str(,,)) as bool
     loop until endOfTime(i, randomFunc(42))
 end function
 
+function withoutBody()
