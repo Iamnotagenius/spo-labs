@@ -1,6 +1,7 @@
 function someFun(a as int, vvb)
     dim a,b, c as int
     0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
+    dosmth();
     if a > 5 then
         print("yes");
         dim str as string

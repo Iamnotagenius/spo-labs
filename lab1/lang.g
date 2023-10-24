@@ -11,6 +11,7 @@ tokens {
     Body;
     Signature;
     Arg;
+    Call;
     Array;
     Expr;
     ReturnType;
@@ -56,7 +57,7 @@ compExpr: addExpr (CompOp^ addExpr)*;
 addExpr: multExpr (AddOp^ multExpr)*;
 multExpr: bitExpr (MultOp^ bitExpr)*;
 bitExpr: call (BitOp^ call)*;
-call: atom (LParen (expr (Comma expr)*)? RParen)? -> ^(atom expr*);
+call: atom (LParen (expr (Comma expr)*)? RParen)? -> ^(atom ^(LParen expr*)?);
 atom:
     LParen expr RParen -> expr
     |identifier
