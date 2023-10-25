@@ -51,18 +51,22 @@ loopTerm: While | Until;
 
 expr: orExpr;
 
+unOp: Not | Minus | Tilde;
+addOp: Plus | Minus;
+bitOp: BitOp | Tilde;
+
 orExpr: andExpr (Or^ andExpr)*;
 andExpr: compExpr (And^ compExpr)*;
 compExpr: addExpr (CompOp^ addExpr)*;
-addExpr: multExpr (AddOp^ multExpr)*;
+addExpr: multExpr (addOp^ multExpr)*;
 multExpr: bitExpr (MultOp^ bitExpr)*;
-bitExpr: call (BitOp^ call)*;
+bitExpr: unExpr (bitOp^ unExpr)*;
+unExpr: (unOp^)? call;
 call: atom (LParen (expr (Comma expr)*)? RParen)? -> ^(atom ^(LParen expr*)?);
 atom:
     LParen expr RParen -> expr
     |identifier
     |literal
-    |UnOp atom -> ^(UnOp atom)
 ;
 
 builtin: BuiltinType; 
@@ -88,13 +92,15 @@ Until: 'until';
 
 End: 'end';
 
-UnOp: '-' | '~' | '!';
 And: '&&';
 Or: '||';
-BitOp: '~' | '^' | '|' | '&';
+BitOp: '^' | '|' | '&';
 CompOp: '>' | '<' | '<=' | '>=' | '==';
 MultOp: '*' | '/' | '%';
-AddOp: '+' | '-';
+Tilde: '~';
+Not: '!';
+Minus: '-';
+Plus: '+';
 
 
 String: '"' Char* '"';

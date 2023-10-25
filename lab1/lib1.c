@@ -16,14 +16,6 @@ void freeAst(ast_t *a) {
   free(a);
 }
 
-static void stringFree(pANTLR3_STRING string) {
-  if (string->chars) {
-    ANTLR3_FREE(string->chars);
-  }
-  ANTLR3_FREE(string);
-  return;
-}
-
 pANTLR3_STRING createErrorMessage(pANTLR3_BASE_RECOGNIZER rec) {
   pANTLR3_EXCEPTION ex = rec->state->exception;
   pANTLR3_STRING_FACTORY factory = ((ext_rec *)rec)->strFactory;
@@ -181,7 +173,8 @@ static void saveError(pANTLR3_BASE_RECOGNIZER recognizer) {
   //
   recognizer->state->errorCount++;
   extended->errors->add(extended->errors, createErrorMessage(recognizer),
-                        (void (*)(void *))stringFree);
+                        NULL);
+  recognizer->displayRecognitionError(recognizer, recognizer->state->tokenNames);
 }
 
 ext_rec *extendRecognizer(pANTLR3_BASE_RECOGNIZER *rec) {
