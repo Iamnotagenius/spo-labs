@@ -1,0 +1,65 @@
+function someFun(a as int, vvb)
+    0b1001 | ~0b0110 * 5 + 0x2E > 0xff || 0b1010 & 3 == 32;
+    if a > 5 then
+        print("yes");
+    else
+        error("no", 3);
+    end if
+    while i > 0
+        first();
+        second();
+        if i == 0 then
+            break
+        end if
+        third();
+    wend
+    afterWhile("laaaaaa");
+end function
+
+function FunnyFunc(gf, vvb as str(,,)) as bool
+    0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
+    do
+        smth(1, 2);
+        dim var as int
+    loop until var == threshold(var)
+    do
+        anotherIteration(lol);
+    loop while hasMemory() && !tired()
+end function
+
+function without()
+    while true
+    wend
+    deadCode();
+end function
+
+function with() as int
+    do
+        first(rand(23 > 5 || CONST));
+        dim o as bool
+        if urgency(o) then
+            doUrgent();
+            jo();
+            dim anotherVar as int
+            -anotherVar - 2 + 5 - 1;
+            dim bad as bool
+            computeBadness(bad);
+            if bad then
+                print("HALT");
+                break
+            end if
+            otherWork();
+            fancy(expr(bad * anotherVar));
+        else
+            dim u, v as int
+            compute(u, v, default);
+            someFun(u, v);
+        end if
+        FunnyFunc(no, "sad");
+        whenEnd();
+    loop until without()
+    cleanup();
+end function
+
+            
+
