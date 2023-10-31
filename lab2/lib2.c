@@ -5,24 +5,26 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
+    pANTLR3_VECTOR vars;
     pANTLR3_VECTOR errors;
     pANTLR3_STRING_FACTORY strFactory;
     pANTLR3_UINT8 sourceName;
-} error_data_t;
+} additional_data_t;
 
-cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, error_data_t* errData);
-cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, error_data_t* errData);
-void appendPos(pANTLR3_STRING str, error_data_t* errData, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos);
+cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, additional_data_t* data);
+cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, additional_data_t* data);
+void appendPos(pANTLR3_STRING str, additional_data_t* data, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos);
 void freeCfgNode(cfg_node_t* node);
 void setNextForBreak(cfg_node_t* node, void* data);
 
-void addError(error_data_t* errData, const char* message, ANTLR3_UINT32 line, ANTLR3_UINT32 charPositionInLine) {
-    pANTLR3_STRING err = errData->strFactory->newRaw(errData->strFactory);
-    appendPos(err, errData, line, charPositionInLine);
+void addError(additional_data_t* data, const char* message, ANTLR3_UINT32 line, ANTLR3_UINT32 charPositionInLine) {
+    pANTLR3_STRING err = data->strFactory->newRaw(data->strFactory);
+    appendPos(err, data, line, charPositionInLine);
     err->append(err, message);
-    errData->errors->add(errData->errors, err, NULL);
+    data->errors->add(data->errors, err, NULL);
 }
 
 const char *getTypeDesc(statement_type type) {
@@ -53,15 +55,16 @@ cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile) {
     retval->name = tree->getText(tree)->chars;
     retval->signature = tree->getFirstChildWithType(tree, Signature);
     pANTLR3_BASE_TREE body = tree->getFirstChildWithType(tree, Body);
-    retval->errors = antlr3VectorNew(sizeof(pANTLR3_STRING));
-    error_data_t ed = {retval->errors, tree->strFactory, sourceFile};
+    retval->errors = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    retval->vars = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    additional_data_t ed = {retval->errors, retval->vars, tree->strFactory, sourceFile};
     retval->cfgRoot = createNodesFromBody(body, NULL, &ed);
     walkCfg(retval->cfgRoot, setNextForBreak, &ed);
     return retval;
 }
 
-void appendPos(pANTLR3_STRING str, error_data_t* errData, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos) {
-    str->append(str, (const char *)errData->sourceName);
+void appendPos(pANTLR3_STRING str, additional_data_t* data, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos) {
+    str->append(str, (const char *)data->sourceName);
     str->append(str, "(");
     str->addi(str, line);
     str->append(str, ":");
@@ -69,7 +72,7 @@ void appendPos(pANTLR3_STRING str, error_data_t* errData, ANTLR3_UINT32 line, AN
     str->append(str, "): ");
 }
 
-cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, error_data_t* errData) {
+cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, additional_data_t* data) {
     if (body == NULL) {
         return NULL;
     }
@@ -77,14 +80,14 @@ cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, erro
     pANTLR3_VECTOR statements = body->children;
     cfg_node_t** pNext;
     pANTLR3_BASE_TREE stmt = statements->elements[0].element;
-    retval = createNodeFromStatement(stmt, parent, errData);
+    retval = createNodeFromStatement(stmt, parent, data);
     pNext = &retval->next;
     for (ANTLR3_UINT32 i = 1; i < statements->count; i++) {
         pANTLR3_BASE_TREE stmt = statements->elements[i].element;
-        cfg_node_t* current = createNodeFromStatement(stmt, parent, errData);
+        cfg_node_t* current = createNodeFromStatement(stmt, parent, data);
         if (current->type == BREAK) {
             if (i < statements->count - 1) {
-                addError(errData, "warning: dead code after break", stmt->getLine(stmt), stmt->getCharPositionInLine(stmt));
+                addError(data, "warning: dead code after break", stmt->getLine(stmt), stmt->getCharPositionInLine(stmt));
             }
         }
         *pNext = current;
@@ -94,7 +97,7 @@ cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, erro
     return retval;
 }
 
-cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, error_data_t* errData) {
+cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, additional_data_t* data) {
     if (statement == NULL) {
         return NULL;
     }
@@ -103,6 +106,35 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
     retval->parent = parent;
     switch (statement->getType(statement)) {
         case Dim:
+            {
+                pANTLR3_BASE_TREE typeNode = statement->getChild(statement, 0);
+                pANTLR3_STRING type = typeNode->getText(typeNode);
+                bool typeFound = false;
+                for (ANTLR3_UINT32 i = 0; i < data->vars->count; i++) {
+                    vars_t* vars = data->vars->get(data->vars, i);
+                    if (type->compareS(type, vars->type) != 0) {
+                        continue;
+                    }
+                    typeFound = true;
+                    pANTLR3_VECTOR identifiers = typeNode->children;
+                    for (ANTLR3_UINT32 i = 0; i < identifiers->count; i++) {
+                        pANTLR3_BASE_TREE idNode = identifiers->get(identifiers, i);
+                        vars->identifiers->add(vars->identifiers, idNode->getText(idNode), NULL);
+                    }
+                }
+                if (!typeFound) {
+                    pANTLR3_VECTOR identifiers = typeNode->children;
+                    pANTLR3_VECTOR newIds = antlr3VectorNew(identifiers->count);
+                    for (ANTLR3_UINT32 i = 0; i < identifiers->count; i++) {
+                        pANTLR3_BASE_TREE idNode = identifiers->get(identifiers, i);
+                        newIds->add(newIds, idNode->getText(idNode), NULL);
+                    }
+                    vars_t* new = malloc(sizeof(vars_t));
+                    new->type = type;
+                    new->identifiers = newIds;
+                    data->vars->add(data->vars, new, free);
+                }
+            }
         case Expr:
             {
                 retval->type = statement->getType(statement) == Expr ? EXPR : DIM;
@@ -115,8 +147,8 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                 retval->type = IF;
                 if_t i = {
                     statement->getChild(statement, 0),
-                    createNodesFromBody(statement->getChild(statement, 1), retval, errData),
-                    createNodesFromBody(statement->getChild(statement, 2), retval, errData)
+                    createNodesFromBody(statement->getChild(statement, 1), retval, data),
+                    createNodesFromBody(statement->getChild(statement, 2), retval, data)
                 };
                 retval->u.cond = i;
                 break;
@@ -137,7 +169,7 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                 retval->type = WHILE;
                 loop_t l = {
                     statement->getChild(statement, 0),
-                    createNodesFromBody(statement->getFirstChildWithType(statement, Body), retval, errData)
+                    createNodesFromBody(statement->getFirstChildWithType(statement, Body), retval, data)
                 };
                 retval->u.loop = l;
                 break;
@@ -151,7 +183,7 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                 }
                 loop_t l = {
                     child->getChild(child, 0),
-                    createNodesFromBody(statement->getFirstChildWithType(statement, Body), retval, errData)
+                    createNodesFromBody(statement->getFirstChildWithType(statement, Body), retval, data)
                 };
                 retval->u.loop = l;
                 break;
@@ -319,7 +351,6 @@ void setNextForBreak(cfg_node_t* node, void* data) {
         return;
     }
     cfg_node_t* loop = node->parent;
-    error_data_t* errData = data;
     while (loop) {
         switch (loop->type) {
             case WHILE:
@@ -332,5 +363,5 @@ void setNextForBreak(cfg_node_t* node, void* data) {
         }
         loop = loop->parent;
     }
-    addError(errData,  "logic error: break usage outside of a loop", node->u.breakNode.line, node->u.breakNode.charPositionInLine);
+    addError(data,  "logic error: break usage outside of a loop", node->u.breakNode.line, node->u.breakNode.charPositionInLine);
 }

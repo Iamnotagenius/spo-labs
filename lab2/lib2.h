@@ -58,10 +58,16 @@ typedef struct {
 } step_t;
 
 typedef struct {
+    pANTLR3_STRING type;
+    pANTLR3_VECTOR identifiers;
+} vars_t;
+
+typedef struct {
     pANTLR3_UINT8 sourceFile;
     pANTLR3_UINT8 name;
     pANTLR3_BASE_TREE signature;
     pANTLR3_VECTOR errors;
+    pANTLR3_VECTOR vars;
     cfg_node_t* cfgRoot;
 } cfg_t;
 

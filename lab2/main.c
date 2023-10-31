@@ -13,12 +13,6 @@ typedef struct {
     pANTLR3_UINT8 funcName;
 } call_info_t;
 
-void indent(int depth) {
-    for (int i = 0; i < depth; i++) {
-        printf("  ");
-    }
-}
-
 void printExpr(pANTLR3_BASE_TREE exprTree, FILE* output) {
     pANTLR3_BASE_TREE child = exprTree->getChild(exprTree, 0);
     if (child && child->getType(child) == LParen) {
@@ -70,64 +64,6 @@ void printDim(pANTLR3_BASE_TREE tree, FILE* output) {
         fprintf(output, ", %s", var->getText(var)->chars);
     }
     fprintf(output, " as %s", tree->getText(tree)->chars);
-}
-
-void printCf(cfg_node_t* node, int depth) {
-    if (node == NULL) {
-        indent(depth);
-        puts("<no body>");
-        return;
-    }
-    while (node) {
-        indent(depth);
-        printf("%s (%p): ", getTypeDesc(node->type), node);
-        switch (node->type) {
-        case EXPR:
-        case DIM:
-            {
-                expr_t e = node->u.expr;
-                (node->type == DIM ? printDim : printExpr)(e.tree, stdout);
-                printf("\n");
-                break;
-            }
-        case IF:
-            {
-                if_t i = node->u.cond;
-                printf("condition ");
-                printExpr(i.condExpr, stdout);
-                printf("\n");
-                indent(depth);
-                puts("then");
-                printCf(i.thenNode, depth + 1);
-                indent(depth);
-                puts("else");
-                printCf(i.elseNode, depth + 1);
-                break;
-            }
-        case BREAK:
-            printf("points to %p\n", node->u.breakNode.loopExit);
-            break;
-        case WHILE:
-        case DO_UNTIL:
-        case DO_WHILE:
-            {
-                loop_t l = node->u.loop;
-                printf("condition ");
-                printExpr(l.cond, stdout);
-                printf("\n");
-                printCf(l.body, depth + 1);
-                break;
-            }
-            case ASSIGNMENT:
-            {
-                assignment_t a = node->u.assignment;
-                printf("%s = ", a.identifier);
-                printExpr(a.expr, stdout);
-                break;
-            }
-        }
-        node = node->next;
-    }
 }
 
 void printCfinWalk(cfg_node_t* node, void* data) {
