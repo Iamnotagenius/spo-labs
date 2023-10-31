@@ -4,6 +4,8 @@
 #include <antlr3interfaces.h>
 #include <bits/types/FILE.h>
 #include <stdio.h>
+#include <string.h>
+#include <libgen.h>
 #include "lib2.h"
 
 typedef struct {
@@ -116,6 +118,13 @@ void printCf(cfg_node_t* node, int depth) {
                 printCf(l.body, depth + 1);
                 break;
             }
+            case ASSIGNMENT:
+            {
+                assignment_t a = node->u.assignment;
+                printf("%s = ", a.identifier);
+                printExpr(a.expr, stdout);
+                break;
+            }
         }
         node = node->next;
     }
@@ -158,6 +167,12 @@ void printCfinWalk(cfg_node_t* node, void* data) {
                 printf("\n");
                 break;
             }
+        case ASSIGNMENT:
+            {
+                assignment_t a = node->u.assignment;
+                printf("%s = ", a.identifier);
+                printExpr(a.expr, stdout);
+            }
     }
 }
 
@@ -191,6 +206,9 @@ void printEdge(FILE* output, cfg_node_t* node, step_t step) {
     case DO_WHILE:
         printExpr(node->u.loop.cond, output);
         break;
+    case ASSIGNMENT:
+        fprintf(output, "%s = ", node->u.assignment.identifier);
+        printExpr(node->u.assignment.expr, output);
     }
     fprintf(output, "\"]\n");
 }
@@ -206,35 +224,48 @@ void makeDotFromCfg(cfg_t* cfg, FILE* output) {
     fprintf(output, "}\n");
 }
 
+void printCallEdge(FILE* output, pANTLR3_BASE_TREE tree, pANTLR3_UINT8 funcName) {
+    if (tree == NULL) {
+        return;
+    }
+    pANTLR3_BASE_TREE child = tree->getChild(tree, 0);
+    if (child != NULL && child->getType(child) == LParen) {
+        fprintf(output, "    %s -> %s", funcName, tree->getText(tree)->chars);
+    }
+    if (tree->getChildCount(tree) > 0) {
+        for (ANTLR3_UINT32 i = 0; i < tree->getChildCount(tree); i++) {
+            pANTLR3_BASE_TREE child = tree->getChild(tree, i);
+            printCallEdge(output, child, funcName);
+        }
+    }
+}
+
 void printCallGraphEdge(cfg_node_t* node, call_info_t* info) {
     pANTLR3_BASE_TREE expr;
     switch (node->type) {
     case EXPR:
-    case DIM:
         expr = node->u.expr.tree;
+        break;
     case IF:
         expr = node->u.cond.condExpr;
+        break;
+    case DIM:
     case BREAK:
         expr = NULL;
+        break;
     case WHILE:
     case DO_UNTIL:
     case DO_WHILE:
         expr = node->u.loop.cond;
         break;
+    case ASSIGNMENT:
+        expr = node->u.assignment.expr;
+        break;
     }
     if (expr == NULL) {
         return;
     }
-    pANTLR3_COMMON_TREE_NODE_STREAM nodes = antlr3CommonTreeNodeStreamNewTree(expr, ANTLR3_SIZE_HINT);
-    while (nodes->hasNext && nodes->hasNext(nodes)) {
-        expr = nodes->next(nodes);
-        printf("Found %s while creating call graph\n", expr->getText(expr)->chars);
-        pANTLR3_BASE_TREE child = expr->getChild(expr, 0);
-        if (child->getType(child) != LParen) {
-            continue;
-        }
-        fprintf(info->output, "    %s -> %s", info->funcName, expr->getText(expr)->chars);
-    }
+    printCallEdge(info->output, expr, info->funcName);
 }
 
 void makeCallGraph(pANTLR3_VECTOR cfgs, FILE* output) {
@@ -248,20 +279,55 @@ void makeCallGraph(pANTLR3_VECTOR cfgs, FILE* output) {
     fprintf(output, "}\n");
 }
 
+
 int main(int argc, char *argv[]) {
-    ast_t* ast = parseFile((pANTLR3_UINT8)argv[1]);
-    char filename[FILENAME_MAX];
-    pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[1]);
-    for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
-        cfg_t* cfg = cfgs->elements[i].element;
-        printf("Cfg for %s from %s\n", cfg->name, cfg->sourceFile);
-        printCf(cfg->cfgRoot, 1);
-        printf("--------------------\n");
-        walkCfg(cfg->cfgRoot, printCfinWalk, NULL);
-        sprintf(filename, "%s.%s.dot", cfg->sourceFile, cfg->name);
-        makeDotFromCfg(cfg, fopen(filename, "w+"));
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s [-o OUTPUT_DIR] INPUT1 [INPUT2...]\n", argv[0]);
+        return 1;
     }
-    makeCallGraph(cfgs, fopen("callGraph.dot", "w+"));
-    freeAst(ast);
-    cfgs->free(cfgs);
+    char filepath[FILENAME_MAX];
+    char* name = filepath;
+    int argOffset = 0;
+    if (strncmp(argv[1], "-o", 2) == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Usage: %s [-o OUTPUT_DIR] INPUT1 [INPUT2...]\n", argv[0]);
+            return 1;
+        }
+        argOffset = 3;
+        name += sprintf(filepath, "%s/", argv[2]);
+    }
+    for (int i = argOffset; i < argc; i++) {
+        ast_t* ast = parseFile((pANTLR3_UINT8)argv[i]);
+        if (ast->errors->count > 0) {
+            fprintf(stderr, "There were %d errors while parsing a file\n", ast->errors->count);
+            for (ANTLR3_UINT32 i = 0; i < ast->errors->count; i++) {
+                pANTLR3_STRING err = ast->errors->get(ast->errors, i);
+                fprintf(stderr, "%s\n", err->chars);
+            }
+            return 1;
+        }
+        pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[i]);
+        for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
+            cfg_t* cfg = cfgs->elements[i].element;
+            printf("Cfg for %s from %s\n", cfg->name, cfg->sourceFile);
+            if (cfg->errors->count > 0) {
+                fprintf(stderr, "There were %d errors:\n", cfg->errors->count);
+                for (ANTLR3_UINT32 i = 0; i < cfg->errors->count; i++) {
+                    pANTLR3_STRING err = cfg->errors->get(cfg->errors, i);
+                    fprintf(stderr, "%s\n", err->chars);
+                }
+            }
+            /* printCf(cfg->cfgRoot, 1); */
+            sprintf(name, "%s.%s.dot", cfg->sourceFile, cfg->name);
+            FILE* dotFile = fopen(filepath, "w+");
+            makeDotFromCfg(cfg, dotFile);
+            fclose(dotFile);
+        }
+        sprintf(name, "%s.callGraph.dot", basename(argv[i]));
+        FILE* callGraphFile = fopen(filepath, "w+");
+        makeCallGraph(cfgs, callGraphFile);
+        fclose(callGraphFile);
+        freeAst(ast);
+        cfgs->free(cfgs);
+    }
 }

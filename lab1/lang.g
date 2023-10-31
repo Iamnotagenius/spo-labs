@@ -43,6 +43,7 @@ statement:
     | Do statement* Loop loopTerm expr -> ^(Loop ^(loopTerm expr) ^(Body statement*)?)
     | Break
     | expr Semi -> ^(Expr expr)
+    | identifier Assignment^ expr Semi!
 ;
 
 thenClause: Then statement* -> ^(Then statement*);
@@ -101,6 +102,7 @@ Tilde: '~';
 Not: '!';
 Minus: '-';
 Plus: '+';
+Assignment: '=';
 
 
 String: '"' Char* '"';

@@ -7,7 +7,7 @@
 #include "../lab1/lib1.h"
 
 typedef enum {
-    EXPR, DIM, IF, BREAK, WHILE, DO_UNTIL, DO_WHILE
+    EXPR, DIM, IF, BREAK, WHILE, DO_UNTIL, DO_WHILE, ASSIGNMENT
 } statement_type;
 
 struct cfg_node_struct;
@@ -33,6 +33,11 @@ typedef struct {
     struct cfg_node_struct* body;
 } loop_t;
 
+typedef struct {
+    unsigned char *identifier;
+    pANTLR3_BASE_TREE expr;
+} assignment_t;
+
 typedef struct cfg_node_struct {
     statement_type type;
     struct cfg_node_struct* parent;
@@ -42,6 +47,7 @@ typedef struct cfg_node_struct {
         if_t cond;
         break_t breakNode;
         loop_t loop;
+        assignment_t assignment;
     } u;
 } cfg_node_t;
 

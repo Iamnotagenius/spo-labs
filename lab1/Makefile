@@ -4,7 +4,7 @@ ANTLR3_SOURCES=langLexer.c langParser.c
 ANTLR3_ARTIFACTS=$(ANTLR3_HEADERS) $(ANTLR3_SOURCES)
 LIBS=-lantlr3c
 
-.PHONY: parser all debug
+.PHONY: parser all
 
 all: parser a.out lib/lib1.so
 
@@ -14,7 +14,7 @@ $(ANTLR3_ARTIFACTS): lang.g
 	java -jar ./antlr-3.4-complete-no-antlrv2.jar $^
 
 a.out: $(SOURCES) $(ANTLR3_SOURCES)
-	${CC} $(LIBS) $^
+	${CC} $^ $(LIBS)
 
 lib/lib1.so: lib1.c $(ANTLR3_SOURCES)
 	${CC} -shared -o lib/lib1.so -fPIC $^
