@@ -17,6 +17,8 @@ typedef struct {
 cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, additional_data_t* data);
 cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, additional_data_t* data);
 void appendPos(pANTLR3_STRING str, additional_data_t* data, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos);
+bool areTypesEqual(type_t* first, type_t* second);
+type_t parseTypeFromAst(pANTLR3_BASE_TREE tree);
 void freeCfgNode(cfg_node_t* node);
 void setNextForBreak(cfg_node_t* node, void* data);
 
@@ -57,7 +59,7 @@ cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile) {
     pANTLR3_BASE_TREE body = tree->getFirstChildWithType(tree, Body);
     retval->errors = antlr3VectorNew(ANTLR3_SIZE_HINT);
     retval->vars = antlr3VectorNew(ANTLR3_SIZE_HINT);
-    additional_data_t ed = {retval->errors, retval->vars, tree->strFactory, sourceFile};
+    additional_data_t ed = {retval->vars, retval->errors, tree->strFactory, sourceFile};
     retval->cfgRoot = createNodesFromBody(body, NULL, &ed);
     walkCfg(retval->cfgRoot, setNextForBreak, &ed);
     return retval;
@@ -108,24 +110,26 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
         case Dim:
             {
                 pANTLR3_BASE_TREE typeNode = statement->getChild(statement, 0);
-                pANTLR3_STRING type = typeNode->getText(typeNode);
+                type_t type = parseTypeFromAst(typeNode);
+                pANTLR3_VECTOR newIds = antlr3VectorNew(ANTLR3_SIZE_HINT);
+                ANTLR3_UINT32 idsOffset = type.isArray ? 1 : 0;
                 bool typeFound = false;
                 for (ANTLR3_UINT32 i = 0; i < data->vars->count; i++) {
                     vars_t* vars = data->vars->get(data->vars, i);
-                    if (type->compareS(type, vars->type) != 0) {
+                    if (!areTypesEqual(&vars->type, &type)) {
                         continue;
                     }
                     typeFound = true;
                     pANTLR3_VECTOR identifiers = typeNode->children;
-                    for (ANTLR3_UINT32 i = 0; i < identifiers->count; i++) {
+                    for (ANTLR3_UINT32 i = idsOffset; i < identifiers->count; i++) {
                         pANTLR3_BASE_TREE idNode = identifiers->get(identifiers, i);
                         vars->identifiers->add(vars->identifiers, idNode->getText(idNode), NULL);
+                        newIds->add(newIds, idNode->getText(idNode), NULL);
                     }
                 }
                 if (!typeFound) {
                     pANTLR3_VECTOR identifiers = typeNode->children;
-                    pANTLR3_VECTOR newIds = antlr3VectorNew(identifiers->count);
-                    for (ANTLR3_UINT32 i = 0; i < identifiers->count; i++) {
+                    for (ANTLR3_UINT32 i = idsOffset; i < identifiers->count; i++) {
                         pANTLR3_BASE_TREE idNode = identifiers->get(identifiers, i);
                         newIds->add(newIds, idNode->getText(idNode), NULL);
                     }
@@ -134,10 +138,14 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                     new->identifiers = newIds;
                     data->vars->add(data->vars, new, free);
                 }
+                dim_t d = {type, newIds};
+                retval->u.dim = d;
+                retval->type = DIM;
+                break;
             }
         case Expr:
             {
-                retval->type = statement->getType(statement) == Expr ? EXPR : DIM;
+                retval->type = EXPR;
                 expr_t e = {statement->getChild(statement, 0)};
                 retval->u.expr = e;
                 break;
@@ -241,6 +249,21 @@ void freeCfgNode(cfg_node_t* node) {
         free(node);
         node = tmp;
     }
+}
+
+type_t parseTypeFromAst(pANTLR3_BASE_TREE tree) {
+    pANTLR3_BASE_TREE arrayNode = tree->getFirstChildWithType(tree, Array);
+    type_t retval = {tree->getText(tree), arrayNode != NULL};
+    if (arrayNode != NULL) {
+        retval.rank = arrayNode->getChildCount(arrayNode) + 1;
+    }
+    return retval;
+}
+
+bool areTypesEqual(type_t* first, type_t* second) {
+    return first->identifier->compareS(first->identifier, second->identifier) == 0 &&
+        first->isArray == second->isArray &&
+        first->rank == second->rank;
 }
 
 cfg_node_t* getNextNode(cfg_node_t* node) {

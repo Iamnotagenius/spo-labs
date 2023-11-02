@@ -13,8 +13,19 @@ typedef enum {
 struct cfg_node_struct;
 
 typedef struct {
+    pANTLR3_STRING identifier;
+    bool isArray;
+    int rank;
+} type_t;
+
+typedef struct {
     pANTLR3_BASE_TREE tree;
 } expr_t;
+
+typedef struct {
+    type_t type;
+    pANTLR3_VECTOR identifiers;
+} dim_t;
 
 typedef struct {
     pANTLR3_BASE_TREE condExpr;
@@ -43,6 +54,7 @@ typedef struct cfg_node_struct {
     struct cfg_node_struct* parent;
     struct cfg_node_struct* next;
     union {
+        dim_t dim;
         expr_t expr;
         if_t cond;
         break_t breakNode;
@@ -58,7 +70,7 @@ typedef struct {
 } step_t;
 
 typedef struct {
-    pANTLR3_STRING type;
+    type_t type;
     pANTLR3_VECTOR identifiers;
 } vars_t;
 

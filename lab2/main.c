@@ -55,15 +55,22 @@ void printExpr(pANTLR3_BASE_TREE exprTree, FILE* output) {
     printExpr(exprTree->getChild(exprTree, 1), output);
 }
 
-void printDim(pANTLR3_BASE_TREE tree, FILE* output) {
-    pANTLR3_VECTOR vars = tree->children;
+void printDim(dim_t* dim, FILE* output) {
+    pANTLR3_VECTOR vars = dim->identifiers;
     pANTLR3_BASE_TREE var = vars->get(vars, 0);
     fprintf(output, "dim %s", var->getText(var)->chars);
     for (ANTLR3_UINT32 i = 1; i < vars->count; i++) {
         var = vars->get(vars, i);
         fprintf(output, ", %s", var->getText(var)->chars);
     }
-    fprintf(output, " as %s", tree->getText(tree)->chars);
+    fprintf(output, " as %s", dim->type.identifier->chars);
+    if (dim->type.isArray) {
+        putc('(', output);
+        for (ANTLR3_UINT32 i = 0; i < dim->type.rank - 1; i++) {
+            putc(',', output);
+        }
+        putc(')', output);
+    }
 }
 
 void printCfinWalk(cfg_node_t* node, void* data) {
@@ -75,10 +82,13 @@ void printCfinWalk(cfg_node_t* node, void* data) {
     printf("%s (%p): ", getTypeDesc(node->type), node);
     switch (node->type) {
         case EXPR:
+            {
+                printDim(&node->u.dim, stdout);
+            }
         case DIM:
             {
                 expr_t e = node->u.expr;
-                (node->type == DIM ? printDim : printExpr)(e.tree, stdout);
+                printExpr(e.tree, stdout);
                 printf("\n");
                 break;
             }
@@ -129,7 +139,7 @@ void printEdge(FILE* output, cfg_node_t* node, step_t step) {
         printExpr(node->u.expr.tree, output);
         break;
     case DIM:
-        printDim(node->u.expr.tree, output);
+        printDim(&node->u.dim, output);
         break;
     case IF:
         printExpr(node->u.cond.condExpr, output);

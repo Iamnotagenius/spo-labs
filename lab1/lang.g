@@ -11,7 +11,6 @@ tokens {
     Body;
     Signature;
     Arg;
-    Call;
     Array;
     Expr;
     ReturnType;
@@ -19,10 +18,10 @@ tokens {
 
 source: sourceItem* -> ^(Root sourceItem*);
 
-typeSpec: 'as' typeRef -> typeRef;
+typeSpec: 'as' typeRef arraySpec? -> ^(typeRef arraySpec?);
 
 typeRef:
-    builtin | identifier^ arraySpec?
+    builtin | identifier
 ;
 
 arraySpec: LParen (Comma)* RParen -> ^(Array Comma*);
