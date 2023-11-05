@@ -85,6 +85,7 @@ typedef struct {
 
 
 const char *getTypeDesc(statement_type type);
+bool areTypesEqual(type_t* first, type_t* second);
 pANTLR3_VECTOR createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile);
 cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile);
 void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data);

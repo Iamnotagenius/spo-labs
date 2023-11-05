@@ -18,4 +18,4 @@ lab2.zip: $(SOURCES) input Makefile lib2.h
 
 debug: main.c lib2.c
 	${CC} -g $^ -L/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib -L$(LIB1_PATH) -Wl,-rpath=$(LIB1_PATH):/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)
-	${CC} -shared -o lib2.so -g -fPIC $^ -L/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib -L$(LIB1_PATH) -Wl,-rpath=$(LIB1_PATH):/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)
+	${CC} -shared -o lib/lib2.so -g -fPIC $^ -L/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib -L$(LIB1_PATH) -Wl,-rpath=$(LIB1_PATH):/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)

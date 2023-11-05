@@ -17,7 +17,6 @@ typedef struct {
 cfg_node_t* createNodesFromBody(pANTLR3_BASE_TREE body, cfg_node_t* parent, additional_data_t* data);
 cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* parent, additional_data_t* data);
 void appendPos(pANTLR3_STRING str, additional_data_t* data, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos);
-bool areTypesEqual(type_t* first, type_t* second);
 type_t parseTypeFromAst(pANTLR3_BASE_TREE tree);
 void freeCfgNode(cfg_node_t* node);
 void setNextForBreak(cfg_node_t* node, void* data);
