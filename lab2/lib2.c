@@ -60,7 +60,7 @@ cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile) {
     retval->vars = antlr3VectorNew(ANTLR3_SIZE_HINT);
     additional_data_t ed = {retval->vars, retval->errors, tree->strFactory, sourceFile};
     retval->cfgRoot = createNodesFromBody(body, NULL, &ed);
-    walkCfg(retval->cfgRoot, setNextForBreak, &ed);
+    walkCfg(retval->cfgRoot, setNextForBreak, &ed, NULL);
     return retval;
 }
 
@@ -339,7 +339,7 @@ step_t getCfgStep(cfg_node_t* node) {
     }
 }
 
-void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data) {
+void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data, void (*postAction)(cfg_node_t*, void *)) {
     if (root == NULL) {
         return;
     }
@@ -349,8 +349,8 @@ void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data)
             case IF:
                 {
                     if_t i = root->u.cond;
-                    walkCfg(i.thenNode, action, data);
-                    walkCfg(i.elseNode, action, data);
+                    walkCfg(i.thenNode, action, data, postAction);
+                    walkCfg(i.elseNode, action, data, postAction);
                     break;
                 }
             case WHILE:
@@ -358,11 +358,14 @@ void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data)
             case DO_WHILE:
                 {
                     loop_t l = root->u.loop;
-                    walkCfg(l.body, action, data);
+                    walkCfg(l.body, action, data, postAction);
                     break;
                 }
             default:
                 break;
+        }
+        if (postAction) {
+            postAction(root, data);
         }
         root = root->next;
     }

@@ -1,4 +1,5 @@
 #include <antlr3defs.h>
+#include <antlr3interfaces.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,13 +34,21 @@ int main(int argc, char *argv[]) {
                 }
             }
             asm_t a = compileToAssembly(cfg);
+            /* TODO: header and string decls */
             for (ANTLR3_UINT32 j = 0; j < a.instructions->count; j++) {
                 asm_line_t* line = a.instructions->get(a.instructions, j);
                 if (line->isLabel) {
                     printf("%s:\n", line->cmd);
                     continue;
                 }
-                printf("%-8c%-12s%-12s%s\n", ' ', line->cmd, line->dest ? line->dest : (pANTLR3_UINT8)"", line->src ? line->src : (pANTLR3_UINT8)"");
+                printf(
+                    "%8c%-10s%s%s%s\n",
+                    ' ',
+                    line->cmd,
+                    line->dest ? line->dest : (pANTLR3_UINT8)"",
+                    line->src ? ", " : "",
+                    line->src ? line->src : (pANTLR3_UINT8)""
+                );
             }
         }
         freeAst(ast);

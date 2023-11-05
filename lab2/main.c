@@ -166,7 +166,7 @@ void printEdgesInWalk(cfg_node_t* node, FILE* output) {
 
 void makeDotFromCfg(cfg_t* cfg, FILE* output) {
     fprintf(output, "digraph %s {\n    splines=ortho\n    node [shape=box,fontname=consolas]\n", cfg->name);
-    walkCfg(cfg->cfgRoot, (void (*))printEdgesInWalk, output);
+    walkCfg(cfg->cfgRoot, (void (*))printEdgesInWalk, output, NULL);
     fprintf(output, "}\n");
 }
 
@@ -220,7 +220,7 @@ void makeCallGraph(pANTLR3_VECTOR cfgs, FILE* output) {
     for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
         cfg_t* cfg = cfgs->get(cfgs, i);
         ci.funcName = cfg->name;
-        walkCfg(cfg->cfgRoot, (void (*))printCallGraphEdge, &ci);
+        walkCfg(cfg->cfgRoot, (void (*))printCallGraphEdge, &ci, NULL);
     }
     fprintf(output, "}\n");
 }

@@ -88,8 +88,9 @@ const char *getTypeDesc(statement_type type);
 bool areTypesEqual(type_t* first, type_t* second);
 pANTLR3_VECTOR createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile);
 cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile);
-void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data);
+void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data, void (*postAction)(cfg_node_t*, void *));
 step_t getCfgStep(cfg_node_t* node);
+cfg_node_t* getNextNode(cfg_node_t* node);
 void freeCfg(cfg_t* cfg);
 
 #endif

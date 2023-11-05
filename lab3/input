@@ -6,11 +6,9 @@ function someFun(a as int, vvb)
     dosmth();
     if a > 5 then
         print("yes");
-        dim str as string
         do
-            str + "literal";
-            count + 1;
-        loop until stringIsTooBig(str)
+            a + 1;
+        loop until a == count
     else
         error("no", 3);
         a || b && c;
@@ -21,7 +19,7 @@ function FunnyFunc(gf, vvb as str(,,)) as bool
     dim i, n as int
     while n > 0
         n / 2;
-        print("Not yet");
+        someFun(i, 125);
     wend
     do
         i+1;
