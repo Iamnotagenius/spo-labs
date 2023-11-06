@@ -46,6 +46,7 @@ typedef struct {
 
 typedef struct {
     unsigned char *identifier;
+    pANTLR3_BASE_TREE arrayIndexExpr;
     pANTLR3_BASE_TREE expr;
 } assignment_t;
 

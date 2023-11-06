@@ -8,7 +8,9 @@ int test(int a, int b);
 int another(int a, short b);
 bool stack(char a, int b);
 void print();
+unsigned long setChar(int a[], int len, int idx);
+void testProc(long l);
 
 int main(int argc, char *argv[]) {
-    print();
+    testProc(5);
 }

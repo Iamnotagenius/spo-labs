@@ -16,13 +16,18 @@ typedef struct {
     pANTLR3_STRING addr;
     ANTLR3_UINT32 size;
     bool isSigned;
-    /* TODO: arrays */
-} id_entry_t;
+    bool isArray;
+} var_t;
 
 typedef struct {
     cfg_node_t* node;
     pANTLR3_STRING label;
 } label_t;
+
+typedef struct {
+    pANTLR3_STRING string;
+    pANTLR3_STRING addr;
+} string_t;
 
 typedef struct {
     pANTLR3_VECTOR addrMap;
@@ -51,8 +56,10 @@ ANTLR3_UINT32 getSize(pANTLR3_STRING intType);
 void compileStatement(cfg_node_t* node, asm_info_t* info);
 comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, asm_info_t* info);
 bool isSigned(pANTLR3_STRING intType);
-id_entry_t* getEntry(pANTLR3_VECTOR map, pANTLR3_UINT8 id);
-id_entry_t* getEntryS(pANTLR3_VECTOR map, pANTLR3_STRING id);
+var_t* createVarFromTree(pANTLR3_VECTOR map, pANTLR3_STRING id, pANTLR3_STRING addr, pANTLR3_BASE_TREE type);
+var_t* createVar(pANTLR3_VECTOR map, pANTLR3_STRING id, pANTLR3_STRING addr, type_t* type);
+var_t* getVar(pANTLR3_VECTOR map, pANTLR3_UINT8 id);
+var_t* getVarS(pANTLR3_VECTOR map, pANTLR3_STRING id);
 void labelLoopTail(cfg_node_t* node, asm_info_t* info);
 pANTLR3_STRING createNumericString(pANTLR3_STRING_FACTORY strFactory, ANTLR3_INT32 n);
 pANTLR3_STRING createSizedPtr(pANTLR3_STRING_FACTORY strFactory, pANTLR3_STRING addr, ANTLR3_UINT32 size);
@@ -83,12 +90,34 @@ const unsigned char* getGPRegisterInOrder(REG reg, ANTLR3_UINT32 size) {
     };
     ANTLR3_UINT32 regSizeIdx;
     switch (size) {
-        case 8: regSizeIdx = 0; break;
-        case 4: regSizeIdx = 1; break;
-        case 2: regSizeIdx = 2; break;
-        case 1: regSizeIdx = 3; break;
+        case sizeof(long): regSizeIdx = 0; break;
+        case sizeof(int): regSizeIdx = 1; break;
+        case sizeof(short): regSizeIdx = 2; break;
+        case sizeof(char): regSizeIdx = 3; break;
     }
     return (const unsigned char*)registers[reg][regSizeIdx];
+}
+
+var_t* createVarFromTree(pANTLR3_VECTOR addrMap, pANTLR3_STRING id, pANTLR3_STRING addr, pANTLR3_BASE_TREE type) {
+    var_t* entry = malloc(sizeof(var_t));
+    entry->id = id;
+    entry->addr = addr;
+    entry->isArray = type != NULL ? type->getFirstChildWithType(type, LParen) != NULL || id->compare(type->getText(type), "string") == 0 : false;
+    entry->size = type != NULL ? getSize(type->getText(type)) : sizeof(long);
+    entry->isSigned = type != NULL ? isSigned(type->getText(type)) : true;
+    addrMap->add(addrMap, entry, free);
+    return entry;
+}
+
+var_t* createVar(pANTLR3_VECTOR addrMap, pANTLR3_STRING id, pANTLR3_STRING addr, type_t* type) {
+    var_t* entry = malloc(sizeof(var_t));
+    entry->id = id;
+    entry->addr = addr;
+    entry->isArray = type != NULL ? type->isArray : false;
+    entry->size = type != NULL ? getSize(type->identifier) : sizeof(long);
+    entry->isSigned = type != NULL ? isSigned(type->identifier) : true;
+    addrMap->add(addrMap, entry, free);
+    return entry;
 }
 
 ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instructions, pANTLR3_BASE_TREE signature) {
@@ -100,63 +129,25 @@ ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instruction
         pANTLR3_BASE_TREE argNode = signature->getChild(signature, i);
         pANTLR3_BASE_TREE id = argNode->getChild(argNode, 0);
         pANTLR3_BASE_TREE type = argNode->getChild(argNode, 1);
-        ANTLR3_UINT32 size = type != NULL ? getSize(type->getText(type)) : sizeof(long);
-        usedStack += size;
+        var_t* var = createVarFromTree(addrMap, id->getText(id), NULL, type);
+        usedStack += var->isArray ? sizeof(long) : var->size;
         pANTLR3_STRING addr = strFactory->newStr(strFactory, (pANTLR3_UINT8)"[rbp-");
         addr->addi(addr, usedStack);
         addr->addc(addr, ']');
-        id_entry_t* entry = malloc(sizeof(id_entry_t));
-        entry->id = id->getText(id);
-        entry->addr = addr;
-        entry->size = size;
-        entry->isSigned = type != NULL ? isSigned(type->getText(type)) : true;
-        addrMap->add(addrMap, entry, free);
-        addCmd(instructions, "mov", addr->chars, getGPRegisterInOrder(argumentRegisters[i], size));
+        var->addr = addr;
+        addCmd(instructions, "mov", addr->chars, getGPRegisterInOrder(argumentRegisters[i], var->size));
     }
     for (; i < signature->children->count; i++) {
         pANTLR3_BASE_TREE argNode = signature->getChild(signature, i);
         pANTLR3_BASE_TREE id = argNode->getChild(argNode, 0);
         pANTLR3_BASE_TREE type = argNode->getChild(argNode, 1);
-        ANTLR3_UINT32 size = type != NULL ? getSize(type->getText(type)) : sizeof(long);
-        id_entry_t* entry = malloc(sizeof(id_entry_t));
-        entry->id = id->getText(id);
-        entry->size = size;
-        entry->isSigned = type != NULL ? isSigned(type->getText(type)) : true;
+        var_t* var = createVarFromTree(addrMap, id->getText(id), NULL, type);
         pANTLR3_STRING addr = strFactory->newStr(strFactory, (pANTLR3_UINT8)"[rbp+");
         addr->addi(addr, (i - lenArgRegs + 2) * sizeof(long));
         addr->addc(addr, ']');
-        entry->addr = addr;
-        addrMap->add(addrMap, entry, free);
+        var->addr = addr;
     }
     return usedStack;
-}
-
-pANTLR3_VECTOR getFuncDefsFromCfgs(pANTLR3_VECTOR cfgs) {
-    pANTLR3_VECTOR retval = antlr3VectorNew(cfgs->count);
-    for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
-        cfg_t* cfg = cfgs->get(cfgs, i);
-        func_t* func = malloc(sizeof(func_t));
-        func->identifier = cfg->name;
-        pANTLR3_BASE_TREE signature = cfg->signature;
-        if (signature == NULL) {
-            func->args = antlr3VectorNew(ANTLR3_SIZE_HINT);
-            retval->add(retval, func, (void (*))freeFunc);
-            continue;
-        }
-        func->args = antlr3VectorNew(signature->getChildCount(signature));
-        for (ANTLR3_UINT32 j = 0; j < signature->getChildCount(signature); j++) {
-            pANTLR3_BASE_TREE argNode = signature->getChild(signature, j);
-            pANTLR3_BASE_TREE idNode = argNode->getChild(argNode, 0);
-            pANTLR3_STRING id = idNode->getText(idNode);
-            pANTLR3_BASE_TREE typeNode = argNode->getChild(argNode, 1);
-            arg_t* arg = malloc(sizeof(arg_t));
-            arg->identifier = id;
-            arg->type = typeNode != NULL ? typeNode->getText(typeNode)->chars : DEFAULT_TYPE;
-            func->args->add(func->args, arg, free);
-        }
-        retval->add(retval, func, (void (*))freeFunc);
-    }
-    return retval;
 }
 
 asm_t compileToAssembly(cfg_t* cfg) {
@@ -179,15 +170,10 @@ asm_t compileToAssembly(cfg_t* cfg) {
         for (ANTLR3_UINT32 i = 0; i < vars->identifiers->count; i++) {
             pANTLR3_STRING id = vars->identifiers->get(vars->identifiers, i);
             pANTLR3_STRING addr = strFactory->newStr(strFactory, (pANTLR3_UINT8)"[rbp-");
-            usedStack += size;
+            usedStack += vars->type.isArray ? sizeof(long) : size;
             addr->addi(addr, usedStack);
             addr->addc(addr, ']');
-            id_entry_t* entry = malloc(sizeof(id_entry_t));
-            entry->id = id;
-            entry->size = size;
-            entry->addr = addr;
-            entry->isSigned = isSigned(vars->type.identifier);
-            addrMap->add(addrMap, entry, free);
+            createVar(addrMap, id, addr, &vars->type);
             fprintf(stderr, "handled id = '%s'\n", id->chars);
         }
     }
@@ -196,7 +182,7 @@ asm_t compileToAssembly(cfg_t* cfg) {
     addCmd(instructions, "sub", (pANTLR3_UINT8)"rsp", bytes->chars);
     fprintf(stderr, "AddrMap:\n");
     for (ANTLR3_UINT32 i = 0; i < addrMap->count; i++) {
-        id_entry_t* entry = addrMap->get(addrMap, i);
+        var_t* entry = addrMap->get(addrMap, i);
         fprintf(stderr, "%s -> %s\n", entry->id->chars, entry->addr->chars);
     }
     asm_info_t info = {addrMap, instructions, strings, strFactory, usedStack, labels};
@@ -242,11 +228,11 @@ void handleCall(pANTLR3_BASE_TREE call, ANTLR3_UINT32 usedRegisters, asm_info_t*
 
     for (i = 0; i < usedCalleeSavedRegisters; i++) {
         addCmd(
-            info->instructions,
-            "mov",
-            getGPRegisterInOrder(argumentRegisters[i], sizeof(long)),
-            getGPRegisterInOrder(i + RBX, sizeof(long))
-        );
+                info->instructions,
+                "mov",
+                getGPRegisterInOrder(argumentRegisters[i], sizeof(long)),
+                getGPRegisterInOrder(i + RBX, sizeof(long))
+              );
     }
     if (argCount > R15 - RBX) {
         addCmd(info->instructions, "pop", getGPRegisterInOrder(R9, sizeof(long)), NULL);
@@ -292,40 +278,101 @@ comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, 
         case Bool:
             {
                 addCmd(
-                    info->instructions,
-                    "mov",
-                    getGPRegisterInOrder(usedRegisters, sizeof(long)),
-                    (pANTLR3_UINT8)(expr->getText(expr)->compare(expr->getText(expr), "true") ? "1" : "0")
-                );
+                        info->instructions,
+                        "mov",
+                        getGPRegisterInOrder(usedRegisters, sizeof(long)),
+                        (pANTLR3_UINT8)(expr->getText(expr)->compare(expr->getText(expr), "true") ? "1" : "0")
+                      );
                 return NO;
             }
         case String:
             {
-                pANTLR3_STRING addr = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"[S");
-                addr->addi(addr, info->strings->count);
-                addr->addc(addr, ']');
-                addCmd(info->instructions, "lea", getGPRegisterInOrder(usedRegisters, sizeof(long)), addr->chars);
-                info->strings->add(info->strings, expr->getText(expr), NULL);
+                string_t* s = NULL;
+                for (ANTLR3_INT32 i = 0; i < info->strings->count; i++) {
+                    string_t* str = info->strings->get(info->strings, i);
+                    if (str->string->compareS(str->string, expr->getText(expr)) == 0) {
+                        s = str;
+                        break;
+                    }
+                }
+
+                if (s == NULL) {
+                    pANTLR3_STRING addr = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"[S");
+                    addr->addi(addr, info->strings->count);
+                    addr->addc(addr, ']');
+                    s = malloc(sizeof(string_t));
+                    s->string = expr->getText(expr);
+                    s->addr = addr;
+                    info->strings->add(info->strings, s, free);
+                }
+
+                addCmd(info->instructions, "lea", getGPRegisterInOrder(usedRegisters, sizeof(long)), s->addr->chars);
                 return NO;
             }
         case Identifier:
             {
-                id_entry_t* entry = getEntryS(info->addrMap, expr->getText(expr));
+                var_t* entry = getVarS(info->addrMap, expr->getText(expr));
                 if (entry == NULL) {
                     if (expr->getChildCount(expr) == 1) {
                         handleCall(expr, usedRegisters, info);
                     }
                     return NO;
                 }
+                pANTLR3_STRING addr = entry->addr;
+                if (entry->isArray) {
+                    pANTLR3_BASE_TREE arrayAccess = expr->getFirstChildWithType(expr, LParen);
+                    if (arrayAccess == NULL) {
+                        addCmd(info->instructions, "mov", getGPRegisterInOrder(usedRegisters, sizeof(long)), entry->addr->chars);
+                        return NO;
+                    }
+                    if (arrayAccess->getChildCount(arrayAccess) > 1) {
+                        fputs("Error: only one-dimensional arrays are supported", stderr);
+                        return NO;
+                    }
+                    if (arrayAccess->getChildCount(arrayAccess) == 0) {
+                        fputs("Error: index for an array is not specified", stderr);
+                        return NO;
+                    }
+                    comp_res res = computeExpression(arrayAccess->getChild(arrayAccess, 0), usedRegisters, info);
+                    if (res != NO) {
+                        setCompRes(res, usedRegisters, info);
+                        addCmd(info->instructions, "movzx", getGPRegisterInOrder(usedRegisters, sizeof(long)), getGPRegisterInOrder(usedRegisters, sizeof(char)));
+                    }
+                    addCmd(info->instructions, "xchg", (pANTLR3_UINT8)"rbx", entry->addr->chars);
+                    pANTLR3_STRING accessAddr = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"[rbx+");
+                    accessAddr->append(accessAddr, (const char *)getGPRegisterInOrder(usedRegisters, sizeof(long)));
+                    if (entry->size > 1) {
+                        accessAddr->addc(accessAddr, '*');
+                        accessAddr->addi(accessAddr, entry->size);
+                    }
+                    accessAddr->addc(accessAddr, ']');
+                    addr = accessAddr;
+                }
                 if (entry->size == sizeof(long)) {
-                    addCmd(info->instructions, "mov", getGPRegisterInOrder(usedRegisters, sizeof(long)), entry->addr->chars);
-                } else {
                     addCmd(
                         info->instructions,
-                        entry->isSigned ? "movsx" : "movzx",
+                        "mov",
                         getGPRegisterInOrder(usedRegisters, sizeof(long)),
-                        createSizedPtr(info->strFactory, entry->addr, entry->size)->chars
+                        addr->chars
                     );
+                } else if (entry->size == sizeof(int)) {
+                    addCmd(
+                            info->instructions,
+                            entry->isSigned ? "movsx" : "mov",
+                            getGPRegisterInOrder(usedRegisters, entry->isSigned ? sizeof(long) : sizeof(int)),
+                            createSizedPtr(info->strFactory, addr, entry->size)->chars
+                          );
+                    return NO;
+                } else {
+                    addCmd(
+                            info->instructions,
+                            entry->isSigned ? "movsx" : "movzx",
+                            getGPRegisterInOrder(usedRegisters, sizeof(long)),
+                            createSizedPtr(info->strFactory, addr, entry->size)->chars
+                          );
+                }
+                if (entry->isArray) {
+                    addCmd(info->instructions, "xchg", (pANTLR3_UINT8)"rbx", entry->addr->chars);
                 }
                 return NO;
             }
@@ -339,11 +386,11 @@ comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, 
                 }
                 setCompRes(computeExpression(expr->getChild(expr, 1), usedRegisters + 1, info), usedRegisters, info);
                 addCmd(
-                    info->instructions,
-                    expr->getType(expr) == Plus ? "add" : "sub",
-                    getGPRegisterInOrder(usedRegisters, sizeof(long)),
-                    getGPRegisterInOrder(usedRegisters + 1, sizeof(long))
-                );
+                        info->instructions,
+                        expr->getType(expr) == Plus ? "add" : "sub",
+                        getGPRegisterInOrder(usedRegisters, sizeof(long)),
+                        getGPRegisterInOrder(usedRegisters + 1, sizeof(long))
+                      );
                 return NO;
             }
         case MultOp:
@@ -365,20 +412,20 @@ comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, 
                     addCmd(info->instructions, "push", getGPRegisterInOrder(RDX, sizeof(long)), NULL);
                 }
                 addCmd(
-                    info->instructions,
-                    "mov",
-                    getGPRegisterInOrder(RAX, sizeof(long)),
-                    getGPRegisterInOrder(usedRegisters, sizeof(long))
-                );
+                        info->instructions,
+                        "mov",
+                        getGPRegisterInOrder(RAX, sizeof(long)),
+                        getGPRegisterInOrder(usedRegisters, sizeof(long))
+                      );
                 addCmd(info->instructions, "mov", getGPRegisterInOrder(RDX, sizeof(long)), (pANTLR3_UINT8)"0");
                 addCmd(info->instructions, "idiv", getGPRegisterInOrder(usedRegisters + 1, sizeof(long)), NULL);
                 if (usedRegisters - 2 != (expr->getText(expr)->chars[0] == '/' ? RAX : RDX)) {
                     addCmd(
-                        info->instructions,
-                        "mov",
-                        getGPRegisterInOrder(usedRegisters - 2, sizeof(long)),
-                        getGPRegisterInOrder(expr->getText(expr)->chars[0] == '/' ? RAX : RDX, sizeof(long))
-                    );
+                            info->instructions,
+                            "mov",
+                            getGPRegisterInOrder(usedRegisters - 2, sizeof(long)),
+                            getGPRegisterInOrder(expr->getText(expr)->chars[0] == '/' ? RAX : RDX, sizeof(long))
+                          );
                 }
                 if (usedRegisters > RDX) {
                     addCmd(info->instructions, "pop", getGPRegisterInOrder(RDX, sizeof(long)), NULL);
@@ -404,11 +451,11 @@ comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, 
                     case '&': op = "and"; break;
                 }
                 addCmd(
-                    info->instructions,
-                    op,
-                    getGPRegisterInOrder(usedRegisters, sizeof(long)),
-                    getGPRegisterInOrder(usedRegisters + 1, sizeof(long))
-                );
+                        info->instructions,
+                        op,
+                        getGPRegisterInOrder(usedRegisters, sizeof(long)),
+                        getGPRegisterInOrder(usedRegisters + 1, sizeof(long))
+                      );
                 return NO;
             }
         case CompOp:
@@ -444,23 +491,23 @@ comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, 
         case Or:
             {
                 addCmd(
-                    info->instructions,
-                    getSet(computeExpression(expr->getChild(expr, 0), usedRegisters, info)),
-                    getGPRegisterInOrder(usedRegisters, sizeof(char)),
-                    NULL
-                );
+                        info->instructions,
+                        getSet(computeExpression(expr->getChild(expr, 0), usedRegisters, info)),
+                        getGPRegisterInOrder(usedRegisters, sizeof(char)),
+                        NULL
+                      );
                 addCmd(
-                    info->instructions,
-                    getSet(computeExpression(expr->getChild(expr, 0), usedRegisters + 1, info)),
-                    getGPRegisterInOrder(usedRegisters + 1, sizeof(char)),
-                    NULL
-                );
+                        info->instructions,
+                        getSet(computeExpression(expr->getChild(expr, 0), usedRegisters + 1, info)),
+                        getGPRegisterInOrder(usedRegisters + 1, sizeof(char)),
+                        NULL
+                      );
                 addCmd(
-                    info->instructions,
-                    expr->getType(expr) == And ? "and" : "or",
-                    getGPRegisterInOrder(usedRegisters, sizeof(char)),
-                    getGPRegisterInOrder(usedRegisters + 1, sizeof(char))
-                );
+                        info->instructions,
+                        expr->getType(expr) == And ? "and" : "or",
+                        getGPRegisterInOrder(usedRegisters, sizeof(char)),
+                        getGPRegisterInOrder(usedRegisters + 1, sizeof(char))
+                      );
                 addCmd(info->instructions, "cmp", getGPRegisterInOrder(usedRegisters, sizeof(char)), (pANTLR3_UINT8)"0");
                 return NE;
             }
@@ -476,80 +523,112 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
         }
     }
     switch (node->type) {
-    case EXPR:
-        {
-            expr_t e = node->u.expr;
-            setCompRes(computeExpression(e.tree, RAX, info), RAX, info);
-            break;
-        }
-    case DIM:
-        break;
-    case IF:
-        {
-            if_t i = node->u.cond;
-            step_t step = getCfgStep(node);
-            if (!step.conditional) {
+        case EXPR:
+            {
+                expr_t e = node->u.expr;
+                setCompRes(computeExpression(e.tree, RAX, info), RAX, info);
                 break;
             }
-            pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
-            label->addi(label, info->labels->count);
-            linkLabel(info->labels, getNextNode(node), label);
-            if (i.elseNode != NULL) {
-                label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
+        case DIM:
+            break;
+        case IF:
+            {
+                if_t i = node->u.cond;
+                step_t step = getCfgStep(node);
+                if (!step.conditional) {
+                    break;
+                }
+                pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
                 label->addi(label, info->labels->count);
-                linkLabel(info->labels, i.elseNode, label);
+                linkLabel(info->labels, getNextNode(node), label);
+                if (i.elseNode != NULL) {
+                    label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
+                    label->addi(label, info->labels->count);
+                    linkLabel(info->labels, i.elseNode, label);
+                }
+                addCmd(info->instructions, getJump(invertCompRes(computeExpression(i.condExpr, RAX, info))), label->chars, NULL);
+                break;
             }
-            addCmd(info->instructions, getJump(invertCompRes(computeExpression(i.condExpr, RAX, info))), label->chars, NULL);
-            break;
-        }
-    case BREAK:
-        {
-            break_t b = node->u.breakNode;
-            pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
-            label->addi(label, info->labels->count);
-            linkLabel(info->labels, b.loopExit, label);
-            addCmd(info->instructions, "jmp", label->chars, NULL);
-            break;
-        }
-    case WHILE:
-        {
-            pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
-            label->addi(label, info->labels->count);
-            linkLabel(info->labels, node, label);
-            addCmd(info->instructions, "jmp", label->chars, NULL);
-        }
-    case DO_UNTIL:
-    case DO_WHILE:
-        {
-            loop_t l = node->u.loop;
-            pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
-            label->addi(label, info->labels->count);
-            linkLabel(info->labels, l.body, label);
-            break;
-        }
-    case ASSIGNMENT:
-        {
-            assignment_t a = node->u.assignment;
-            setCompRes(computeExpression(a.expr, RAX, info), RAX, info);
-            id_entry_t* entry = getEntry(info->addrMap, a.identifier);
-            if (entry == NULL) {
-                fprintf(stderr, "Error: '%s' is not defined.\n", a.identifier);
+        case BREAK:
+            {
+                break_t b = node->u.breakNode;
+                pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
+                label->addi(label, info->labels->count);
+                linkLabel(info->labels, b.loopExit, label);
+                addCmd(info->instructions, "jmp", label->chars, NULL);
+                break;
             }
-            if (entry->size == sizeof(long)) {
-                addCmd(
-                    info->instructions,
-                    "mov",
-                    entry->addr->chars,
-                    getGPRegisterInOrder(RAX, sizeof(long))
-                );
-            } else {
-                addCmd(
-                    info->instructions,
-                    entry->isSigned ? "movsx" : "movzx",
-                    createSizedPtr(info->strFactory, entry->addr, entry->size)->chars,
-                    getGPRegisterInOrder(RAX, sizeof(long))
-                );
+        case WHILE:
+            {
+                pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
+                label->addi(label, info->labels->count);
+                linkLabel(info->labels, node, label);
+                addCmd(info->instructions, "jmp", label->chars, NULL);
             }
+        case DO_UNTIL:
+        case DO_WHILE:
+            {
+                loop_t l = node->u.loop;
+                pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
+                label->addi(label, info->labels->count);
+                linkLabel(info->labels, l.body, label);
+                break;
+            }
+        case ASSIGNMENT:
+            {
+                assignment_t a = node->u.assignment;
+                setCompRes(computeExpression(a.expr, RAX, info), RAX, info);
+                var_t* entry = getVar(info->addrMap, a.identifier);
+                if (entry == NULL) {
+                    fprintf(stderr, "Error: '%s' is not defined.\n", a.identifier);
+                }
+                pANTLR3_STRING addr = entry->addr;
+                if (entry->isArray) {
+                    if (a.arrayIndexExpr == NULL) {
+                        addCmd(info->instructions, "mov", getGPRegisterInOrder(RCX, sizeof(long)), entry->addr->chars);
+                        addCmd(info->instructions, "mov", (pANTLR3_UINT8)"[rcx]", (pANTLR3_UINT8)"rax");
+                        return;
+                    }
+                    comp_res res = computeExpression(a.arrayIndexExpr->getChild(a.arrayIndexExpr, 0), RCX, info);
+                    if (res != NO) {
+                        setCompRes(res, RCX, info);
+                        addCmd(info->instructions, "movzx", getGPRegisterInOrder(RCX, sizeof(long)), getGPRegisterInOrder(RCX, sizeof(char)));
+                    }
+                    addCmd(info->instructions, "xchg", (pANTLR3_UINT8)"rbx", entry->addr->chars);
+                    pANTLR3_STRING accessAddr = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"[rbx+");
+                    accessAddr->append(accessAddr, (const char *)getGPRegisterInOrder(RCX, sizeof(long)));
+                    if (entry->size > 1) {
+                        accessAddr->addc(accessAddr, '*');
+                        accessAddr->addi(accessAddr, entry->size);
+                    }
+                    accessAddr->addc(accessAddr, ']');
+                    addr = accessAddr;
+                }
+                if (entry->size == sizeof(long)) {
+                    addCmd(
+                            info->instructions,
+                            "mov",
+                            addr->chars,
+                            getGPRegisterInOrder(RAX, sizeof(long))
+                          );
+                } else if (entry->size == sizeof(int)) {
+                    addCmd(
+                        info->instructions,
+                        entry->isSigned ? "movsx" : "mov",
+                        createSizedPtr(info->strFactory, addr, entry->size)->chars,
+                        getGPRegisterInOrder(RAX, entry->isSigned ? sizeof(long) : sizeof(int))
+                    );
+                } else {
+                    addCmd(
+                        info->instructions,
+                        entry->isSigned ? "movsx" : "movzx",
+                        createSizedPtr(info->strFactory, addr, entry->size)->chars,
+                        getGPRegisterInOrder(RAX, sizeof(long))
+                    );
+                }
+                if (entry->isArray) {
+                    addCmd(info->instructions, "xchg", (pANTLR3_UINT8)"rbx", entry->addr->chars);
+                }
             break;
         }
     }
@@ -648,24 +727,25 @@ bool isSigned(pANTLR3_STRING intType) {
         intType->compare(intType, "byte") == 0;
 }
 
-ANTLR3_UINT32 getSize(pANTLR3_STRING intType) {
-    if (intType->compare(intType, "int") == 0 || intType->compare(intType, "uint") == 0) {
-        return 4;
+ANTLR3_UINT32 getSize(pANTLR3_STRING type) {
+    if (type->compare(type, "int") == 0 || type->compare(type, "uint") == 0) {
+        return sizeof(int);
     }
-    if (intType->compare(intType, "long") == 0 || intType->compare(intType, "ulong") == 0) {
-        return 8;
+    if (type->compare(type, "long") == 0 || type->compare(type, "ulong") == 0) {
+        return sizeof(long);
     }
-    if (intType->compare(intType, "byte") == 0 ||
-            intType->compare(intType, "char") == 0 ||
-            intType->compare(intType, "bool") == 0) {
-        return 1;
+    if (type->compare(type, "byte") == 0 ||
+            type->compare(type, "char") == 0 ||
+            type->compare(type, "bool") == 0 ||
+            type->compare(type, "string") == 0) {
+        return sizeof(char);
     }
-    return 8;
+    return sizeof(long);
 }
 
-id_entry_t* getEntry(pANTLR3_VECTOR map, pANTLR3_UINT8 id) {
+var_t* getVar(pANTLR3_VECTOR map, pANTLR3_UINT8 id) {
     for (ANTLR3_UINT32 i = 0; i < map->count; i++) {
-        id_entry_t* entry = map->get(map, i);
+        var_t* entry = map->get(map, i);
         if (entry->id->compare(entry->id, (const char*)id) == 0) {
             return entry;
         }
@@ -673,9 +753,9 @@ id_entry_t* getEntry(pANTLR3_VECTOR map, pANTLR3_UINT8 id) {
     return NULL;
 }
 
-id_entry_t* getEntryS(pANTLR3_VECTOR map, pANTLR3_STRING id) {
+var_t* getVarS(pANTLR3_VECTOR map, pANTLR3_STRING id) {
     for (ANTLR3_UINT32 i = 0; i < map->count; i++) {
-        id_entry_t* entry = map->get(map, i);
+        var_t* entry = map->get(map, i);
         if (id->compareS(id, entry->id) == 0) {
             return entry;
         }
@@ -684,7 +764,7 @@ id_entry_t* getEntryS(pANTLR3_VECTOR map, pANTLR3_STRING id) {
 }
 
 pANTLR3_UINT8 getAddrS(pANTLR3_VECTOR map, pANTLR3_STRING id) {
-    id_entry_t* entry = getEntryS(map, id);
+    var_t* entry = getVarS(map, id);
     return entry != NULL ? entry->addr->chars : NULL;
 }
 

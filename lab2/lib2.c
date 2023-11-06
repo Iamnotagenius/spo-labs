@@ -201,6 +201,7 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                 pANTLR3_BASE_TREE identifierNode = statement->getChild(statement, 0);
                 assignment_t a = {
                     identifierNode->getText(identifierNode)->chars,
+                    identifierNode->getChild(identifierNode, 0),
                     statement->getChild(statement, 1)
                 };
                 retval->u.assignment = a;
@@ -252,7 +253,8 @@ void freeCfgNode(cfg_node_t* node) {
 
 type_t parseTypeFromAst(pANTLR3_BASE_TREE tree) {
     pANTLR3_BASE_TREE arrayNode = tree->getFirstChildWithType(tree, Array);
-    type_t retval = {tree->getText(tree), arrayNode != NULL};
+    pANTLR3_STRING id = tree->getText(tree);
+    type_t retval = {id, arrayNode != NULL || id->compare(id, "string") == 0, 1};
     if (arrayNode != NULL) {
         retval.rank = arrayNode->getChildCount(arrayNode) + 1;
     }

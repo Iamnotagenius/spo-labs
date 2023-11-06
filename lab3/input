@@ -1,8 +1,10 @@
-function someFun(a as int, vvb)
-    dim arr as int(,)
+function someFun(a as int, vvb as string)
+    dim arr as ulong(,)
     dim a,b, c as int
     a = 1 + 2 + 3 * 4 * 8 * 25 + 5;
     c = 0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
+    arr(a - c) = 99;
+    vvb(2) = 'b';
     dosmth();
     if a > 5 then
         print("yes");

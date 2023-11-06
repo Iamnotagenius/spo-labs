@@ -42,7 +42,7 @@ statement:
     | Do statement* Loop loopTerm expr -> ^(Loop ^(loopTerm expr) ^(Body statement*)?)
     | Break
     | expr Semi -> ^(Expr expr)
-    | identifier Assignment^ expr Semi!
+    | call Assignment expr Semi -> ^(Assignment call expr)
 ;
 
 thenClause: Then statement* -> ^(Then statement*);
