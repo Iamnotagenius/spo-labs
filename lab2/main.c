@@ -255,7 +255,6 @@ int main(int argc, char *argv[]) {
         pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[i]);
         for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
             cfg_t* cfg = cfgs->elements[i].element;
-            printf("Cfg for %s from %s\n", cfg->name, cfg->sourceFile);
             if (cfg->errors->count > 0) {
                 fprintf(stderr, "There were %d errors:\n", cfg->errors->count);
                 for (ANTLR3_UINT32 i = 0; i < cfg->errors->count; i++) {

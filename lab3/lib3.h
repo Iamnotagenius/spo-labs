@@ -27,5 +27,11 @@ typedef struct {
     pANTLR3_VECTOR args;
 } func_t;
 
-asm_t compileToAssembly(cfg_t* cfg);
+typedef struct {
+    pANTLR3_STRING string;
+    pANTLR3_STRING addr;
+} string_t;
+
+asm_t* compileToAssembly(cfg_t* cfg);
+void freeAsm(asm_t* a);
 #endif

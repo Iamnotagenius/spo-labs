@@ -1,34 +1,53 @@
-function someFun(a as int, vvb as string)
-    dim arr as ulong(,)
-    dim a,b, c as int
-    a = 1 + 2 + 3 * 4 * 8 * 25 + 5;
-    c = 0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
-    arr(a - c) = 99;
-    vvb(2) = 'b';
-    dosmth();
-    if a > 5 then
-        print("yes");
-        do
-            a + 1;
-        loop until a == count
+function sum(arr as int(), count) as int
+    dim i, sum as long
+    i = 0;
+    sum = 0;
+    do
+        sum = sum + arr(i);
+        i = i + 1;
+    loop until i >= count
+    sum;
+end function
+
+function add(a, b)
+    a + b;
+end function
+
+function fib(n) as ulong
+    dim prev, next as ulong
+    prev = 0;
+    next = 1;
+    while n > 1
+        prev = prev + next;
+        next = prev + next;
+        n = n - 2;
+    wend
+    if n == 0 then
+        prev;
     else
-        error("no", 3);
-        a || b && c;
+        next;
     end if
 end function
 
-function FunnyFunc(gf, vvb as str(,,)) as bool
-    dim i, n as int
-    while n > 0
-        n / 2;
-        someFun(i, 125);
+function bubbleSort(arr as int(), length as ulong)
+    dim i as int
+    i = 0;
+    while i < length
+        dim j as int
+        j = 0;
+        while j < length
+            if arr(j) > arr(j + 1) then
+                dim temp as int
+                temp = arr(j);
+                arr(j) = arr(j + 1);
+                arr(j + 1) = temp;
+            end if
+            j = j + 1;
+        wend
+        i = i + 1;
     wend
-    do
-        i+1;
-        if i % 5 == 0 then
-            break
-        end if
-    loop until endOfTime(i, randomFunc(42))
 end function
 
-function withoutBody()
+function mul(a, b)
+    a * b;
+end function

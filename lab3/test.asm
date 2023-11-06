@@ -1,14 +1,22 @@
-	default rel
-	global 	test:function, \
-			another:function, \
-			stack:function, \
-			print:function, \
-			setChar:function, \
-			testProc:function
+default rel
+global	test:function
+global another:function
+global stack:function
+global print:function
+global setChar:function
+global testProc:function
 
 	extern printf
 
+section .data
+S0 		db 		"assembly is life", 10
+.len 	equ 	$-S0
+S1 		db 		"rip code is dope i want longer strings", 10
+.len 	equ 	$-S1
+S2 		db 		"from asm: %d", 10
+
 section .text
+
 test:
 		push 	rbp
 		mov 	rbp, rsp
@@ -41,10 +49,9 @@ stack:
 	mov 	[rbp-1], dil
 	mov 	[rbp-5], esi
 	sub 	rsp, 16
-	mov 	al, [rbp-1]
-	movsx 	rax, al
-	cmp 	rax, rsi
-	sete 	al
+	movsx 	rax, dil
+	mov 	ecx, esi
+	add 	rax, rcx
 	add 	rsp, 16
 	pop 	rbp
 	ret
@@ -77,9 +84,3 @@ testProc:
 	pop 	rbp
 	ret
 
-section .data
-S0 		db 		"assembly is life", 10
-.len 	equ 	$-S0
-S1 		db 		"rip code is dope i want longer strings", 10
-.len 	equ 	$-S1
-S2 		db 		"from asm: %d", 10

@@ -7,10 +7,10 @@ SOURCES=main.c lib2.c
 all: a.out lib/lib2.so
 
 a.out: $(SOURCES)
-	${CC} $^ -L$(LIB1_PATH) $(LIBS)
+	${CC} $^ -L$(LIB1_PATH) $(LIBS) -Wl,-rpath=$(LIB1_PATH)
 
 lib/lib2.so: $(SOURCES)
-	[[ -d lib ]] || mkdir lib
+	[ -d lib ] || mkdir lib
 	${CC} -shared -fPIC $^ -o $@
 
 lab2.zip: $(SOURCES) input Makefile lib2.h

@@ -6,7 +6,7 @@ int main(int argc, char *argv[]) {
   pANTLR3_UINT8 fName;
   ast_t *langAST;
   if (argc < 3) {
-      fprintf(stderr, "Usage: %s INPUT OUTPUT", argv[0]);
+      fprintf(stderr, "Usage: %s INPUT OUTPUT\n", argv[0]);
       return 1;
   }
   fName = (pANTLR3_UINT8)argv[1];

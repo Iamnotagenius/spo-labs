@@ -8,50 +8,74 @@
 #include "../lab1/lib1.h"
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s INPUT1 [INPUT2...]\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s INPUT OUTPUT\n", argv[0]);
         return 1;
     }
-    for (int i = 1; i < argc; i++) {
-        ast_t* ast = parseFile((pANTLR3_UINT8)argv[i]);
-        if (ast->errors->count > 0) {
-            fprintf(stderr, "There were %d errors while parsing a file\n", ast->errors->count);
-            for (ANTLR3_UINT32 i = 0; i < ast->errors->count; i++) {
-                pANTLR3_STRING err = ast->errors->get(ast->errors, i);
+
+    ast_t* ast = parseFile((pANTLR3_UINT8)argv[1]);
+    if (ast->errors->count > 0) {
+        fprintf(stderr, "There were %d errors while parsing a file\n", ast->errors->count);
+        for (ANTLR3_UINT32 i = 0; i < ast->errors->count; i++) {
+            pANTLR3_STRING err = ast->errors->get(ast->errors, i);
+            fprintf(stderr, "%s\n", err->chars);
+        }
+        return 1;
+    }
+    pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[1]);
+    pANTLR3_VECTOR asms = antlr3VectorNew(cfgs->count);
+    for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
+        cfg_t* cfg = cfgs->get(cfgs, i);
+        if (cfg->errors->count > 0) {
+            fprintf(stderr, "There were %d errors:\n", cfg->errors->count);
+            for (ANTLR3_UINT32 i = 0; i < cfg->errors->count; i++) {
+                pANTLR3_STRING err = cfg->errors->get(cfg->errors, i);
                 fprintf(stderr, "%s\n", err->chars);
             }
-            return 1;
         }
-        pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[i]);
-        for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
-            cfg_t* cfg = cfgs->get(cfgs, i);
-            printf("Cfg for %s from %s\n", cfg->name, cfg->sourceFile);
-            if (cfg->errors->count > 0) {
-                fprintf(stderr, "There were %d errors:\n", cfg->errors->count);
-                for (ANTLR3_UINT32 i = 0; i < cfg->errors->count; i++) {
-                    pANTLR3_STRING err = cfg->errors->get(cfg->errors, i);
-                    fprintf(stderr, "%s\n", err->chars);
-                }
+        asm_t *a = compileToAssembly(cfg);
+        asms->add(asms, a, (void (*))freeAsm);
+
+    }
+    FILE* output = fopen(argv[argc - 1], "w+");
+    fputs("default rel\n\n", output);
+    for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
+        cfg_t* cfg = cfgs->get(cfgs, i);
+        fprintf(output, "global %s:function\n", cfg->name);
+    }
+
+    fputs("\nsection .data\n", output);
+    for (ANTLR3_UINT32 i = 0; i < asms->count; i++){
+        asm_t* a = asms->get(asms, i);
+        for (ANTLR3_UINT32 i = 0; i < a->strings->count; i++) {
+            string_t* str = a->strings->get(a->strings, i);
+            pANTLR3_STRING addr = str->addr->subString(str->addr, 1, str->addr->len - 1);
+            fprintf(output, "%s\tdb\t%s\n", addr->chars, str->string->chars);
+        }
+    }
+    fputs("\nsection .text\n", output);
+    for (ANTLR3_UINT32 i = 0; i < asms->count; i++) {
+        fputs("\n", output);
+        asm_t* a = asms->get(asms, i);
+        for (ANTLR3_UINT32 j = 0; j < a->instructions->count; j++) {
+            asm_line_t* line = a->instructions->get(a->instructions, j);
+            if (line->isLabel) {
+                fprintf(output, "%s:\n", line->cmd);
+                continue;
             }
-            asm_t a = compileToAssembly(cfg);
-            /* TODO: header and string decls */
-            for (ANTLR3_UINT32 j = 0; j < a.instructions->count; j++) {
-                asm_line_t* line = a.instructions->get(a.instructions, j);
-                if (line->isLabel) {
-                    printf("%s:\n", line->cmd);
-                    continue;
-                }
-                printf(
-                    "%8c%-10s%s%s%s\n",
-                    ' ',
+            fprintf(
+                    output,
+                    "\t%-8s%s%s%s\n",
                     line->cmd,
                     line->dest ? line->dest : (pANTLR3_UINT8)"",
                     line->src ? ", " : "",
                     line->src ? line->src : (pANTLR3_UINT8)""
-                );
-            }
+                   );
         }
-        freeAst(ast);
-        cfgs->free(cfgs);
     }
+    fclose(output);
+    freeAst(ast);
+    cfgs->free(cfgs);
+    asms->free(asms);
+
 }

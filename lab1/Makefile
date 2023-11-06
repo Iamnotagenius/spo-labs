@@ -17,8 +17,8 @@ a.out: $(SOURCES) $(ANTLR3_SOURCES)
 	${CC} $^ $(LIBS)
 
 lib/lib1.so: lib1.c $(ANTLR3_SOURCES)
+	[ -d lib ] || mkdir lib
 	${CC} -shared -o lib/lib1.so -fPIC $^
-	cp lib1.h include
 
 debug: $(SOURCES) $(ANTLR3_SOURCES)
 	${CC} -g $^ -Wl,-rpath=/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)

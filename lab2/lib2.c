@@ -111,7 +111,7 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
                 pANTLR3_BASE_TREE typeNode = statement->getChild(statement, 0);
                 type_t type = parseTypeFromAst(typeNode);
                 pANTLR3_VECTOR newIds = antlr3VectorNew(ANTLR3_SIZE_HINT);
-                ANTLR3_UINT32 idsOffset = type.isArray ? 1 : 0;
+                ANTLR3_UINT32 idsOffset = type.isArray && type.identifier->compare(type.identifier, "string") != 0 ? 1 : 0;
                 bool typeFound = false;
                 for (ANTLR3_UINT32 i = 0; i < data->vars->count; i++) {
                     vars_t* vars = data->vars->get(data->vars, i);
