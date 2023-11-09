@@ -9,6 +9,7 @@ long add(long a, long b);
 unsigned long fib(long n);
 void bubbleSort(int a[], unsigned long length);
 long mul(long a, long b);
+void hello();
 
 void printArr(int a[], int l) {
     putchar('[');

@@ -6,7 +6,7 @@ global print:function
 global setChar:function
 global testProc:function
 
-	extern printf
+extern printf: wrt ..plt
 
 section .data
 S0 		db 		"assembly is life", 10
@@ -26,6 +26,7 @@ test:
 		add 	eax, esi
 		pop 	rbp
 		ret
+.END:
 
 another:
 		push 	rbp
@@ -41,6 +42,8 @@ another:
 		sub 	eax, ebx
 .J1:
 		pop 	rbp
+.END: 
+LINE32:
 		ret
 
 stack:
@@ -55,6 +58,7 @@ stack:
 	add 	rsp, 16
 	pop 	rbp
 	ret
+.END:
 
 print:
 	mov 	rax, 1
@@ -67,6 +71,7 @@ print:
 	mov 	rax, 1
 	syscall
 	ret
+.END:
 
 setChar:
 	cmp 	rdx, rsi
@@ -75,12 +80,14 @@ setChar:
 	mov 	rax, rdx
 .L0:
 	ret
+.END:
 
 testProc:
 	push 	rbp
 	mov 	rsi, rdi
 	lea 	rdi, [S2]
-	call 	printf WRT ..plt
+	call 	printf
 	pop 	rbp
 	ret
+.END:
 

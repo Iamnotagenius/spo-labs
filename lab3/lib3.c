@@ -31,6 +31,9 @@ typedef struct {
     pANTLR3_STRING_FACTORY strFactory;
     ANTLR3_UINT32 usedStack;
     pANTLR3_VECTOR labels;
+    pANTLR3_UINT8 sourceFile;
+    pANTLR3_UINT8 funcName;
+    bool generateDebugSymbols;
 } asm_info_t;
 
 typedef enum {
@@ -46,7 +49,7 @@ void addInstruction(pANTLR3_VECTOR as, const char* cmd, const unsigned char* des
 void addLabel(pANTLR3_VECTOR as, pANTLR3_UINT8 cmd);
 void linkLabel(pANTLR3_VECTOR labels, cfg_node_t* node, pANTLR3_STRING label);
 pANTLR3_UINT8 getAddrS(pANTLR3_VECTOR map, pANTLR3_STRING id);
-ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instructions, pANTLR3_BASE_TREE signature);
+ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR offsetMap, asm_info_t* info, pANTLR3_BASE_TREE signature);
 ANTLR3_UINT32 getSize(pANTLR3_STRING intType);
 void compileStatement(cfg_node_t* node, asm_info_t* info);
 comp_res computeExpression(pANTLR3_BASE_TREE expr, ANTLR3_UINT32 usedRegisters, asm_info_t* info);
@@ -61,6 +64,8 @@ pANTLR3_STRING createSizedPtr(pANTLR3_STRING_FACTORY strFactory, pANTLR3_STRING 
 void freeFunc(func_t* func);
 void setCompRes(comp_res res, REG reg, asm_info_t* info);
 comp_res invertCompRes(comp_res comp);
+void addLineNumberLabel(asm_info_t* info, ANTLR3_UINT32 lineNumber);
+void addLineNumberEndLabel(asm_info_t* info, ANTLR3_UINT32 lineNumber);
 const char* getSet(comp_res comp);
 const char* getJump(comp_res comp);
 
@@ -115,10 +120,10 @@ var_t* createVar(pANTLR3_VECTOR addrMap, pANTLR3_STRING id, pANTLR3_STRING addr,
     return entry;
 }
 
-ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instructions, pANTLR3_BASE_TREE signature) {
+ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR offsetMap, asm_info_t* info, pANTLR3_BASE_TREE signature) {
     static ANTLR3_UINT32 lenArgRegs = sizeof(argumentRegisters)/sizeof(argumentRegisters[0]);
     pANTLR3_STRING_FACTORY strFactory = signature->strFactory;
-    ANTLR3_UINT32 usedStack = 0;
+    ANTLR3_INT64 usedStack = 0;
     ANTLR3_UINT32 i;
     bool hasReturnType = signature->getFirstChildWithType(signature, ReturnType) != NULL;
 
@@ -133,7 +138,7 @@ ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instruction
         addr->addc(addr, ']');
         var->addr = addr;
         addInstruction(
-            instructions,
+            info->instructions,
             "mov",
             addr->chars,
             getGPRegisterInOrder(
@@ -141,6 +146,15 @@ ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instruction
                 var->isArray ? sizeof(long) : var->size
             )
         );
+        arg_offset_t* off = malloc(sizeof(arg_offset_t));
+        off->identifier = id->getText(id);
+        off->rbpOffset = -usedStack;
+        off->sourceFile = info->sourceFile;
+        off->funcName = info->funcName;
+        off->size = var->size;
+        off->isArray = var->isArray;
+        off->isSigned = var->isSigned;
+        offsetMap->add(offsetMap, off, free);
     }
     for (; i < signature->children->count; i++) {
         pANTLR3_BASE_TREE argNode = signature->getChild(signature, i);
@@ -151,23 +165,44 @@ ANTLR3_UINT32 moveArgsToStack(pANTLR3_VECTOR addrMap, pANTLR3_VECTOR instruction
         addr->addi(addr, (i - lenArgRegs + 2) * sizeof(long));
         addr->addc(addr, ']');
         var->addr = addr;
+        arg_offset_t* off = malloc(sizeof(arg_offset_t));
+        off->identifier = id->getText(id);
+        off->rbpOffset = (i - lenArgRegs + 2) * sizeof(long);
+        off->sourceFile = info->sourceFile;
+        off->funcName = info->funcName;
+        off->size = var->size;
+        off->isArray = var->isArray;
+        off->isSigned = var->isSigned;
+        offsetMap->add(offsetMap, off, free);
     }
     return usedStack;
 }
 
-asm_t* compileToAssembly(cfg_t* cfg) {
+asm_t* compileToAssembly(cfg_t* cfg, bool generateDebugSymbols) {
     pANTLR3_STRING_FACTORY strFactory = antlr3StringFactoryNew(ANTLR3_ENC_UTF8);
     pANTLR3_VECTOR instructions = antlr3VectorNew(ANTLR3_SIZE_HINT);
     pANTLR3_VECTOR strings = antlr3VectorNew(ANTLR3_SIZE_HINT);
     pANTLR3_VECTOR labels = antlr3VectorNew(ANTLR3_SIZE_HINT);
-    ANTLR3_UINT32 usedStack = 0;
+    ANTLR3_INT64 usedStack = 0;
     pANTLR3_VECTOR addrMap = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    pANTLR3_VECTOR offsetMap = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    asm_info_t info = {
+        addrMap,
+        instructions,
+        strings,
+        strFactory,
+        usedStack,
+        labels,
+        cfg->sourceFile,
+        cfg->name,
+        generateDebugSymbols
+    };
     addLabel(instructions, cfg->name);
     addInstruction(instructions, "push", (pANTLR3_UINT8)"rbp", NULL);
     addInstruction(instructions, "mov", (pANTLR3_UINT8)"rbp", (pANTLR3_UINT8)"rsp");
 
     if (cfg->signature != NULL) {
-        usedStack = moveArgsToStack(addrMap, instructions, cfg->signature);
+        usedStack = moveArgsToStack(addrMap, offsetMap, &info, cfg->signature);
     }
     for (ANTLR3_UINT32 i = 0; i < cfg->vars->count; i++) {
         vars_t* vars = cfg->vars->get(cfg->vars, i);
@@ -178,7 +213,16 @@ asm_t* compileToAssembly(cfg_t* cfg) {
             usedStack += vars->type.isArray ? sizeof(long) : size;
             addr->addi(addr, usedStack);
             addr->addc(addr, ']');
-            createVar(addrMap, id, addr, &vars->type);
+            var_t* var = createVar(addrMap, id, addr, &vars->type);
+            arg_offset_t* off = malloc(sizeof(arg_offset_t));
+            off->identifier = id;
+            off->rbpOffset = -usedStack;
+            off->funcName = cfg->name;
+            off->sourceFile = cfg->sourceFile;
+            off->size = var->size;
+            off->isArray = var->isArray;
+            off->isSigned = var->isSigned;
+            offsetMap->add(offsetMap, off, free);
         }
     }
     ANTLR3_UINT32 toSub = STACK_ALIGN(usedStack);
@@ -186,14 +230,11 @@ asm_t* compileToAssembly(cfg_t* cfg) {
     addInstruction(instructions, "sub", (pANTLR3_UINT8)"rsp", bytes->chars);
 #ifdef DEBUG
     fprintf(stderr, "AddrMap:\n");
-#endif
     for (ANTLR3_UINT32 i = 0; i < addrMap->count; i++) {
         var_t* entry = addrMap->get(addrMap, i);
-#ifdef DEBUG
         fprintf(stderr, "%s -> %s\n", entry->id->chars, entry->addr->chars);
-#endif
     }
-    asm_info_t info = {addrMap, instructions, strings, strFactory, usedStack, labels};
+#endif
     walkCfg(cfg->cfgRoot, (void (*))compileStatement, &info, (void (*))labelLoopTail);
 
     for (ANTLR3_UINT32 i = 0; i < labels->count; i++) {
@@ -210,6 +251,9 @@ asm_t* compileToAssembly(cfg_t* cfg) {
     a->instructions = instructions;
     a->strFactory = strFactory;
     a->strings = strings;
+    a->localAndArgOffsetMap = offsetMap;
+    addrMap->free(addrMap);
+    labels->free(labels);
     return a;
 }
 
@@ -536,7 +580,13 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
         case EXPR:
             {
                 expr_t e = node->u.expr;
+                if (info->generateDebugSymbols) {
+                    addLineNumberLabel(info, e.tree->getLine(e.tree));
+                }
                 setCompRes(computeExpression(e.tree, RAX, info), RAX, info);
+                if (info->generateDebugSymbols) {
+                    addLineNumberEndLabel(info, e.tree->getLine(e.tree));
+                }
                 break;
             }
         case DIM:
@@ -556,7 +606,13 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
                     label->addi(label, info->labels->count);
                     linkLabel(info->labels, i.elseNode, label);
                 }
+                if (info->generateDebugSymbols) {
+                    addLineNumberLabel(info, i.condExpr->getLine(i.condExpr));
+                }
                 addInstruction(info->instructions, getJump(invertCompRes(computeExpression(i.condExpr, RAX, info))), label->chars, NULL);
+                if (info->generateDebugSymbols) {
+                    addLineNumberEndLabel(info, i.condExpr->getLine(i.condExpr));
+                }
                 break;
             }
         case BREAK:
@@ -565,7 +621,13 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
                 pANTLR3_STRING label = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)".L");
                 label->addi(label, info->labels->count);
                 linkLabel(info->labels, b.loopExit, label);
+                if (info->generateDebugSymbols) {
+                    addLineNumberLabel(info, b.line);
+                }
                 addInstruction(info->instructions, "jmp", label->chars, NULL);
+                if (info->generateDebugSymbols) {
+                    addLineNumberEndLabel(info, b.line);
+                }
                 break;
             }
         case WHILE:
@@ -587,6 +649,9 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
         case ASSIGNMENT:
             {
                 assignment_t a = node->u.assignment;
+                if (info->generateDebugSymbols) {
+                    addLineNumberLabel(info, a.expr->getLine(a.expr));
+                }
                 setCompRes(computeExpression(a.expr, RAX, info), RAX, info);
                 var_t* entry = getVar(info->addrMap, a.identifier);
                 if (entry == NULL) {
@@ -623,6 +688,9 @@ void compileStatement(cfg_node_t* node, asm_info_t* info) {
                 if (entry->isArray) {
                     addInstruction(info->instructions, "xchg", (pANTLR3_UINT8)"rbx", entry->addr->chars);
                 }
+                if (info->generateDebugSymbols) {
+                    addLineNumberEndLabel(info, a.expr->getLine(a.expr));
+                }
             break;
         }
     }
@@ -648,22 +716,34 @@ void labelLoopTail(cfg_node_t* node, asm_info_t* info) {
             case WHILE:
             case DO_WHILE:
                 {
+                    if (info->generateDebugSymbols) {
+                        addLineNumberLabel(info, node->parent->u.loop.cond->getLine(node->parent->u.loop.cond));
+                    }
                     addInstruction(
                         info->instructions,
                         getJump(computeExpression(node->parent->u.loop.cond, RAX, info)),
                         bodyLabel->label->chars,
                         NULL
                     );
+                    if (info->generateDebugSymbols) {
+                        addLineNumberEndLabel(info, node->parent->u.loop.cond->getLine(node->parent->u.loop.cond));
+                    }
                     break;
                 }
             case DO_UNTIL:
                 {
+                    if (info->generateDebugSymbols) {
+                        addLineNumberLabel(info, node->parent->u.loop.cond->getLine(node->parent->u.loop.cond));
+                    }
                     addInstruction(
                         info->instructions,
                         getJump(invertCompRes(computeExpression(node->parent->u.loop.cond, RAX, info))),
                         bodyLabel->label->chars,
                         NULL
                     );
+                    if (info->generateDebugSymbols) {
+                        addLineNumberEndLabel(info, node->parent->u.loop.cond->getLine(node->parent->u.loop.cond));
+                    }
                     break;
                 }
             case IF:
@@ -781,6 +861,26 @@ pANTLR3_STRING createSizedPtr(pANTLR3_STRING_FACTORY strFactory, pANTLR3_STRING 
     return ptr;
 }
 
+void addLineNumberLabel(asm_info_t* info, ANTLR3_UINT32 lineNumber) {
+    pANTLR3_STRING dbgLabel = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"..@LN");
+    dbgLabel->addi(dbgLabel, lineNumber);
+    dbgLabel->addc(dbgLabel, '@');
+    dbgLabel->append(dbgLabel, (const char *)info->funcName);
+    dbgLabel->addc(dbgLabel, '@');
+    dbgLabel->append(dbgLabel, (const char *)info->sourceFile);
+    addLabel(info->instructions, dbgLabel->chars);
+}
+
+void addLineNumberEndLabel(asm_info_t* info, ANTLR3_UINT32 lineNumber) {
+    pANTLR3_STRING dbgLabel = info->strFactory->newStr(info->strFactory, (pANTLR3_UINT8)"..@LNEND");
+    dbgLabel->addi(dbgLabel, lineNumber);
+    dbgLabel->addc(dbgLabel, '@');
+    dbgLabel->append(dbgLabel, (const char *)info->funcName);
+    dbgLabel->addc(dbgLabel, '@');
+    dbgLabel->append(dbgLabel, (const char *)info->sourceFile);
+    addLabel(info->instructions, dbgLabel->chars);
+}
+
 void setCompRes(comp_res res, REG reg, asm_info_t* info) {
     if (res != NO) {
         addInstruction(info->instructions, getSet(res), getGPRegisterInOrder(reg, sizeof(char)), NULL);
@@ -832,5 +932,6 @@ void freeAsm(asm_t* a) {
     a->strings->free(a->strings);
     a->instructions->free(a->instructions);
     a->strFactory->close(a->strFactory);
+    a->localAndArgOffsetMap->free(a->localAndArgOffsetMap);
     free(a);
 }

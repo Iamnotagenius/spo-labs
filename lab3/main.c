@@ -1,5 +1,6 @@
 #include <antlr3defs.h>
 #include <antlr3interfaces.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,11 +10,14 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s INPUT OUTPUT\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-g, --debug-symbols] INPUT OUTPUT\n", argv[0]);
         return 1;
     }
-
-    ast_t* ast = parseFile((pANTLR3_UINT8)argv[1]);
+    bool generateDebugSymbols = false;
+    if (strncmp(argv[1], "-g", 2) == 0 || strncmp(argv[1], "--debug-symbols", 15) == 0) {
+        generateDebugSymbols = true;
+    }
+    ast_t* ast = parseFile((pANTLR3_UINT8)argv[1 + generateDebugSymbols]);
     if (ast->errors->count > 0) {
         fprintf(stderr, "There were %d errors while parsing a file\n", ast->errors->count);
         for (ANTLR3_UINT32 i = 0; i < ast->errors->count; i++) {
@@ -22,7 +26,7 @@ int main(int argc, char *argv[]) {
         }
         return 1;
     }
-    pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[1]);
+    pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[1 + generateDebugSymbols]);
     pANTLR3_VECTOR asms = antlr3VectorNew(cfgs->count);
     for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
         cfg_t* cfg = cfgs->get(cfgs, i);
@@ -33,7 +37,7 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "%s\n", err->chars);
             }
         }
-        asm_t *a = compileToAssembly(cfg);
+        asm_t *a = compileToAssembly(cfg, generateDebugSymbols);
         asms->add(asms, a, (void (*))freeAsm);
 
     }
@@ -52,7 +56,16 @@ int main(int argc, char *argv[]) {
             pANTLR3_STRING addr = str->addr->subString(str->addr, 1, str->addr->len - 1);
             fprintf(output, "%s\tdb\t%s\n", addr->chars, str->string->chars);
         }
+        if (generateDebugSymbols) {
+            for (ANTLR3_UINT32 i = 0; i < a->localAndArgOffsetMap->count; i++) {
+                arg_offset_t* off = a->localAndArgOffsetMap->get(a->localAndArgOffsetMap, i);
+                fprintf(output, "_LOCALOFF$%s@%s@%s equ %ld\n", off->identifier->chars, off->funcName, off->sourceFile, off->rbpOffset);
+                fprintf(output, "_LOCALSZ$%s@%s@%s equ %d\n", off->identifier->chars, off->funcName, off->sourceFile, off->size);
+                fprintf(output, "_LOCALPROPS$%s@%s@%s equ %d\n", off->identifier->chars, off->funcName, off->sourceFile, off->isArray | (off->isSigned << 1));
+            }
+        }
     }
+
     fputs("\nsection .text\n", output);
     for (ANTLR3_UINT32 i = 0; i < asms->count; i++) {
         fputs("\n", output);
@@ -77,5 +90,4 @@ int main(int argc, char *argv[]) {
     freeAst(ast);
     cfgs->free(cfgs);
     asms->free(asms);
-
 }
