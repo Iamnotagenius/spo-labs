@@ -1,8 +1,8 @@
 function someFun(a as int, vvb as string)
     dim arr as int(,)
     dim a,b, c as int
-    a = 1 + 2 + 3 * 4 * 8 * 25 + 5;
-    c = 0b1001 | ~0b0110 * 5 + 0x2E > 0xff && 0b1010 & 3 == 32;
+    a = 1 + 2 + (3 * 4 + vvb.z) * 8 * 25 + 5;
+    c = 0b1001 | ~0b0110 * 5 + strut.first - 0x2E > 0xff && 0b1010 & 3 == 32;
     vvb(2) = 'b';
     arr(a + c) = b;
     dosmth();
@@ -19,10 +19,26 @@ function someFun(a as int, vvb as string)
     end if
 end function
 
-function FunnyFunc(gf, vvb as str(,,)) as bool
+struct Point
+    int x;
+    int y;
+    long z;
+end struct
+
+struct User
+    string name;
+    Point location;
+    int age;
+end struct
+
+function withoutBody()
+function printf()
+
+function FunnyFunc(gf, vvb as Point) as bool
     dim i, n as int
     while n > 0
         n / 2;
+        n = vvb.x;
         print("Not yet");
     wend
     do
@@ -33,4 +49,3 @@ function FunnyFunc(gf, vvb as str(,,)) as bool
     loop until endOfTime(i, randomFunc(42))
 end function
 
-function withoutBody()

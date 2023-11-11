@@ -1,5 +1,5 @@
 function someFun(a as int, vvb)
-    0b1001 | ~0b0110 * 5 + 0x2E > 0xff || 0b1010 & 3 == 32;
+    0b1001 | ~0b0110 + magic(32, 42) * 5 + 0x2E > 0xff || 0b1010 & 3 == 32;
     if a > 5 then
         print("yes");
     else

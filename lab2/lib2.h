@@ -15,6 +15,7 @@ struct cfg_node_struct;
 typedef struct {
     pANTLR3_STRING identifier;
     bool isArray;
+    bool isPrimitive;
     int rank;
 } type_t;
 
@@ -84,14 +85,30 @@ typedef struct {
     cfg_node_t* cfgRoot;
 } cfg_t;
 
+typedef struct {
+    pANTLR3_STRING identifier;
+    pANTLR3_VECTOR members;
+} struct_def_t;
+
+typedef struct {
+    pANTLR3_STRING identifier;
+    pANTLR3_STRING type;
+} member_def_t;
+
+typedef struct {
+    pANTLR3_VECTOR cfgs;
+    pANTLR3_VECTOR structs;
+} source_info_t;
 
 const char *getTypeDesc(statement_type type);
 bool areTypesEqual(type_t* first, type_t* second);
-pANTLR3_VECTOR createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile);
+source_info_t createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile);
 cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile);
+struct_def_t* createStructFromNode(pANTLR3_BASE_TREE tree);
 void walkCfg(cfg_node_t* root, void (*action)(cfg_node_t*, void *), void * data, void (*postAction)(cfg_node_t*, void *));
 step_t getCfgStep(cfg_node_t* node);
 cfg_node_t* getNextNode(cfg_node_t* node);
 void freeCfg(cfg_t* cfg);
+void freeStructDef(struct_def_t* def);
 
 #endif

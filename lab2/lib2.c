@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../macros.h"
 
 typedef struct {
     pANTLR3_VECTOR vars;
@@ -41,13 +42,21 @@ const char *getTypeDesc(statement_type type) {
     }
 }
 
-pANTLR3_VECTOR createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile) {
-    pANTLR3_VECTOR retval = antlr3VectorNew(sizeof(cfg_t*));
+source_info_t createCfgs(ast_t* ast, pANTLR3_UINT8 sourceFile) {
+    pANTLR3_VECTOR cfgs = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    pANTLR3_VECTOR structs = antlr3VectorNew(ANTLR3_SIZE_HINT);
     for (ANTLR3_UINT32 i = 0; i < ast->tree->children->count; i++) {
-        pANTLR3_BASE_TREE funcNode = ast->tree->children->elements[i].element;
-        retval->add(retval, createCfgFromFuncNode(funcNode, sourceFile), (void (*)(void *))freeCfg);
+        pANTLR3_BASE_TREE sourceItem = ast->tree->children->elements[i].element;
+        switch (sourceItem->getType(sourceItem)) {
+            case Function:
+                cfgs->add(cfgs, createCfgFromFuncNode(sourceItem->getChild(sourceItem, 0), sourceFile), (void (*))freeCfg);
+                break;
+            case Struct:
+                structs->add(structs, createStructFromNode(sourceItem->getChild(sourceItem, 0)), (void (*))freeStructDef);
+                break;
+        }
     }
-    return retval;
+    return (source_info_t){cfgs, structs};
 }
 
 cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile) {
@@ -62,6 +71,21 @@ cfg_t* createCfgFromFuncNode(pANTLR3_BASE_TREE tree, pANTLR3_UINT8 sourceFile) {
     retval->cfgRoot = createNodesFromBody(body, NULL, &ed);
     walkCfg(retval->cfgRoot, setNextForBreak, &ed, NULL);
     return retval;
+}
+
+struct_def_t* createStructFromNode(pANTLR3_BASE_TREE tree) {
+    pANTLR3_VECTOR members = antlr3VectorNew(tree->getChildCount(tree));
+    for (ANTLR3_UINT32 i = 0; i < tree->getChildCount(tree); i++) {
+        pANTLR3_BASE_TREE memberNode = tree->getChild(tree, i);
+        pANTLR3_BASE_TREE typeNode = memberNode->getChild(memberNode, 0);
+        pANTLR3_BASE_TREE idNode = memberNode->getChild(memberNode, 1);
+        member_def_t* member = malloc(sizeof(member_def_t));
+        *member = (member_def_t){idNode->getText(idNode), typeNode->getText(typeNode)};
+        members->add(members, member, free);
+    }
+    struct_def_t *new = malloc(sizeof(struct_def_t));
+    *new = (struct_def_t){tree->getText(tree), members};
+    return new;
 }
 
 void appendPos(pANTLR3_STRING str, additional_data_t* data, ANTLR3_UINT32 line, ANTLR3_UINT32 charPos) {
@@ -211,6 +235,11 @@ cfg_node_t* createNodeFromStatement(pANTLR3_BASE_TREE statement, cfg_node_t* par
     return retval;
 }
 
+void freeStructDef(struct_def_t* def) {
+    def->members->free(def->members);
+    free(def);
+}
+
 void freeCfg(cfg_t* cfg) {
     cfg->errors->free(cfg->errors);
     freeCfgNode(cfg->cfgRoot);
@@ -252,17 +281,22 @@ void freeCfgNode(cfg_node_t* node) {
 }
 
 type_t parseTypeFromAst(pANTLR3_BASE_TREE tree) {
-    pANTLR3_BASE_TREE arrayNode = tree->getFirstChildWithType(tree, Array);
-    pANTLR3_STRING id = tree->getText(tree);
-    type_t retval = {id, arrayNode != NULL || id->compare(id, "string") == 0, 1};
+    pANTLR3_BASE_TREE arrayNode = CALL(tree, getFirstChildWithType, Array);
+    pANTLR3_STRING id = CALL(tree, getText);
+    type_t retval = {
+        id,
+        arrayNode != NULL || CALL(id, compare, "string") == 0,
+        CALL(tree, getType) == BuiltinType,
+        1
+    };
     if (arrayNode != NULL) {
-        retval.rank = arrayNode->getChildCount(arrayNode) + 1;
+        retval.rank = CALL(arrayNode, getChildCount) + 1;
     }
     return retval;
 }
 
 bool areTypesEqual(type_t* first, type_t* second) {
-    return first->identifier->compareS(first->identifier, second->identifier) == 0 &&
+    return CALL(first->identifier, compareS, second->identifier) == 0 &&
         first->isArray == second->isArray &&
         first->rank == second->rank;
 }

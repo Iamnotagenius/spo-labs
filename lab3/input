@@ -1,3 +1,11 @@
+function puts()
+function printf()
+
+struct Point
+    int x;
+    int y;
+end struct
+
 function sum(arr as int(), count) as int
     dim i, sum as long
     i = 0;
@@ -35,7 +43,7 @@ function bubbleSort(arr as int(), length as ulong)
     while i < length
         dim j as int
         j = 0;
-        while j < length
+        while j < length - 1
             if arr(j) > arr(j + 1) then
                 dim temp as int
                 temp = arr(j);
@@ -51,3 +59,36 @@ end function
 function mul(a, b)
     a * b;
 end function
+
+function _abs(a as int)
+    if a > 0 then
+        a;
+    else
+        -a;
+    end if
+end function
+
+function _add(p1 as Point, p2 as Point) as int
+    p1.x = p1.x + p2.x;
+    p1.y = p1.y + p2.y;
+end function
+
+function dist(p1 as Point, p2 as Point) as int
+    _abs(p2.y - p1.y) + _abs(p2.x - p1.x);
+end function
+
+function hello()
+    dim p1 as Point
+    p1 = Point(3, 4);
+    puts("Hello from my lang");
+    printf("Point(%d, %d)\n", p1.x, p1.y);
+    printf("_abs(-2) = %d\n", _abs(-2));
+    p1.x = 7;
+    dim p2 as Point
+    p2 = Point(1, 5);
+    _add(p1, p2);
+    printf("p1 + p2 is Point(%d, %d)\n", p1.x, p1.y);
+    printf("dist(Point(%d, %d), Point(%d, %d)) is %d\n", p1.x, p1.y, p2.x, p2.y, dist(p1, p2));
+end function
+
+

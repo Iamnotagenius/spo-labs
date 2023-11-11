@@ -6,9 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-func_t *find_func(pANTLR3_VECTOR funcs, const char *id) {
+#include "../lab3/lib3.h"
+
+dbg_func_t *find_func(pANTLR3_VECTOR funcs, const char *id) {
     for (int i = 0; i < funcs->count; i++) {
-        func_t* func = funcs->get(funcs, i);
+        dbg_func_t* func = funcs->get(funcs, i);
         if (strcmp(func->identifier, id) == 0) {
             return func;
         }
@@ -16,9 +18,9 @@ func_t *find_func(pANTLR3_VECTOR funcs, const char *id) {
     return NULL;
 }
 
-func_t *find_func_by_addr(pANTLR3_VECTOR funcs, unsigned long addr) {
+dbg_func_t *find_func_by_addr(pANTLR3_VECTOR funcs, unsigned long addr) {
     for (int i = 0; i < funcs->count; i++) {
-        func_t *func = funcs->get(funcs, i);
+        dbg_func_t *func = funcs->get(funcs, i);
         if (func->instruction_address == addr) {
             return func;
         }
@@ -46,7 +48,7 @@ line_t *find_line(pANTLR3_VECTOR lines, const char *source_file, int line_nr) {
     return NULL;
 }
 
-void free_func(func_t* func) {
+void free_func(dbg_func_t* func) {
     if (func == NULL) {
         return;
     }
@@ -67,3 +69,7 @@ void free_local(local_t* local) {
     free(local);
 }
 
+void free_struct(struct_t* s) {
+    free(s->members);
+    free(s);
+}

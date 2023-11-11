@@ -38,11 +38,17 @@
 #endif
 
 #include "lists.h"
+#include "../macros.h"
+#include "../lab3/lib3.h"
+
+#define MAP_TEXT_START 0x555555554000
 
 typedef struct {
     pANTLR3_VECTOR funcs;
+    pANTLR3_VECTOR structs;
     pANTLR3_VECTOR files;
     pANTLR3_VECTOR lines;
+    pANTLR3_STRING_FACTORY strFactory;
 } dbg_info_t;
 
 typedef struct {
@@ -64,7 +70,7 @@ bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info) {
         *addr = strtol(str, &end, 0);
         if (end == str) {
             for (int i = 0; i < info->funcs->count; i++) {
-                func_t* f = info->funcs->get(info->funcs, i);
+                dbg_func_t* f = CALL(info->funcs, get, i);
                 if (strcmp(str, f->identifier) == 0) {
                     *addr = MAP_TEXT_START + f->instruction_address;
                     return true;
@@ -74,10 +80,10 @@ bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info) {
             int line_number;
             sscanf(str, "%[^:]:%d", file, &line_number);
             for (int i = 0; i < info->files->count; i++) {
-                source_file_t* f = info->files->get(info->files, i);
+                source_file_t* f = CALL(info->files, get, i);
                 if (strcmp(f->name, file) == 0) {
                     for (int j = 0; j < f->lines->count; j++) {
-                        line_t* line = f->lines->get(f->lines, j);
+                        line_t* line = CALL(f->lines, get, j);
                         if (line->line >= line_number) {
                             *addr = MAP_TEXT_START + line->instruction_address_start;
                             return true;
@@ -157,70 +163,105 @@ dbg_info_t read_symbols(char *filename) {
     pANTLR3_VECTOR funcs = antlr3VectorNew(ANTLR3_SIZE_HINT);
     pANTLR3_VECTOR files = antlr3VectorNew(ANTLR3_SIZE_HINT);
     pANTLR3_VECTOR lines = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    pANTLR3_VECTOR structs = antlr3VectorNew(ANTLR3_SIZE_HINT);
+    pANTLR3_STRING_FACTORY strFactory = antlr3StringFactoryNew(ANTLR3_ENC_UTF8);
 
     for (int i = 0; i < symtabhdr->sh_size / sizeof(Elf64_Sym); i++) {
+        printf("Handling '%s'...\n", &strtab[symtab[i].st_name]);
         if (symtab[i].st_info & STT_FUNC) {
-            func_t* f = NULL;
+            dbg_func_t* f = NULL;
             for (int j = 0; j < funcs->count; j++) {
-                func_t* fi = funcs->get(funcs, j);
+                dbg_func_t* fi = CALL(funcs, get, j);
                 if (strcmp(fi->identifier, &strtab[symtab[i].st_name]) == 0) {
                     f = fi;
                     break;
                 }
             }
             if (f == NULL) {
-                f = malloc(sizeof(func_t));
-                *f = (func_t){strdup(&strtab[symtab[i].st_name]), 0, antlr3VectorNew(ANTLR3_SIZE_HINT)};
-                funcs->add(funcs, f, (void (*))free_func);
+                f = malloc(sizeof(dbg_func_t));
+                *f = (dbg_func_t){strdup(&strtab[symtab[i].st_name]), 0, antlr3VectorNew(ANTLR3_SIZE_HINT)};
+                CALL(funcs, add, f, (void (*))free_func);
             }
             f->instruction_address = symtab[i].st_value;
+        }
+
+        if (strncmp(&strtab[symtab[i].st_name], "_STRUCTSZ", 9) == 0) {
+            struct_t *s = malloc(sizeof(struct_t));
+            char id[128], member_id[128];
+            sscanf(&strtab[symtab[i].st_name], "_STRUCTSZ$%s", id);
+            s->identifier = CALL(strFactory, newStr, (pANTLR3_UINT8)id);
+            s->totalSize = symtab[i].st_value;
+            s->memberCount = symtab[i + 1].st_value;
+            s->members = calloc(s->memberCount, sizeof(member_t));
+            for (int j = 0; j < s->memberCount; j++) {
+                int member_index = i + 2 + 2 * j;
+                sscanf(&strtab[symtab[member_index].st_name], "_STRUCTMEMBOFF$%*[^$]$%s", member_id);
+                s->members[j] = (member_t){
+                    CALL(strFactory, newStr, (pANTLR3_UINT8)member_id),
+                    symtab[member_index + 1].st_value,
+                    symtab[member_index].st_value
+                };
+            }
+            CALL(structs, add, s, (void (*))free_struct);
         }
 
         if (strncmp(&strtab[symtab[i].st_name], "_LOCALOFF", 9) == 0) {
             char id[128], func[128], source_file[128];
             sscanf(&strtab[symtab[i].st_name], "_LOCALOFF$%127[^@]@%127[^@]@%127s", id, func, source_file);
-            func_t* f = NULL;
+            dbg_func_t* f = NULL;
             for (int j = 0; j < funcs->count; j++) {
-                func_t* fi = funcs->get(funcs, j);
+                dbg_func_t* fi = CALL(funcs, get, j);
                 if (strcmp(fi->identifier, func) == 0) {
                     f = fi;
                     break;
                 }
             }
             if (f == NULL) {
-                f = malloc(sizeof(func_t));
-                *f = (func_t){strdup(func), -2, antlr3VectorNew(ANTLR3_SIZE_HINT)};
-                funcs->add(funcs, f, (void (*))free_func);
+                f = malloc(sizeof(dbg_func_t));
+                *f = (dbg_func_t){strdup(func), -2, antlr3VectorNew(ANTLR3_SIZE_HINT)};
+                CALL(funcs, add, f, (void (*))free_func);
             }
             pANTLR3_VECTOR locals = f->locals;
             local_t *new = malloc(sizeof(local_t));
-            *new = (local_t){strdup(id), symtab[i].st_value, symtab[i + 1].st_value, symtab[i + 2].st_value};
-            locals->add(locals, new, (void (*))free_local);
+            *new = (local_t){strdup(id), symtab[i].st_value, symtab[i + 1].st_value, symtab[i + 2].st_value, NULL};
+            if ((new->flags & PRIMITIVE_TYPE) == 0) {
+                char type[128];
+                for (int j = 0; j < structs->count; j++) {
+                    struct_t *s = CALL(structs, get, j);
+                    sscanf(&strtab[symtab[i+3].st_name], "_LOCALTYPE$%*[^@]@%*[^@]@%*[^$]$%127s", type);
+                    if (CALL(s->identifier, compare, type) == 0) {
+                        new->type = s;
+                        break;
+                    }
+                }
+            }
+            CALL(locals, add, new, (void (*))free_local);
         }
 
-        if (strncmp(&strtab[symtab[i].st_name], "..@LN", 5) == 0 || strncmp(&strtab[symtab[i].st_name], "..@LNEND", 8) == 0) {
+        if (strncmp(&strtab[symtab[i].st_name], "..@LN", sizeof("..@LN") - 1) == 0 ||
+                strncmp(&strtab[symtab[i].st_name], "..@LNEND", sizeof("..@LNEND") - 1) == 0) {
             bool is_end = strncmp(&strtab[symtab[i].st_name], "..@LNEND", 8) == 0;
             char source_file[128], func_id[128];
             int line;
             sscanf(&strtab[symtab[i].st_name], is_end ?  "..@LNEND%d@%127[^@]@%127s" : "..@LN%d@%127[^@]@%127s", &line, func_id, source_file);
-            func_t* func = find_func(funcs, func_id);
+            dbg_func_t* func = find_func(funcs, func_id);
             if (func == NULL) {
-                func = malloc(sizeof(func_t));
-                *func = (func_t){strdup(func_id), 0, antlr3VectorNew(ANTLR3_SIZE_HINT)};
-                funcs->add(funcs, func, (void (*))free_func);
+                func = malloc(sizeof(dbg_func_t));
+                *func = (dbg_func_t){strdup(func_id), 0, antlr3VectorNew(ANTLR3_SIZE_HINT)};
+                CALL(funcs, add, func, (void (*))free_func);
             }
             source_file_t* file = find_file(files, source_file);
             if (file == NULL) {
-                file = malloc(sizeof(func_t));
+                file = malloc(sizeof(dbg_func_t));
                 *file = (source_file_t){strdup(source_file), fopen(source_file, "r"), antlr3VectorNew(ANTLR3_SIZE_HINT)};
-                files->add(files, file, (void (*))free_source_file);
+                CALL(files, add, file, (void (*))free_source_file);
             }
             line_t* l = find_line(lines, source_file, line);
             if (l == NULL) {
                 l = malloc(sizeof(line_t));
                 *l = (line_t){line, 0, 0, func, file};
-                lines->add(lines, l, free);
-                file->lines->add(file->lines, l, NULL);
+                CALL(lines, add, l, free);
+                CALL(file->lines, add, l, NULL);
             }
             *(is_end ? &l->instruction_address_end : &l->instruction_address_start) = symtab[i].st_value;
         }
@@ -231,12 +272,23 @@ dbg_info_t read_symbols(char *filename) {
     free(strtab);
     free(symtab);
 
-    return (dbg_info_t){funcs, files, lines};
+    for (int i = 0; i < lines->count; i++) {
+        line_t* s = CALL(lines, get, i);
+        printf("Line %d from 0x%lX to 0x%lX\n", s->line, s->instruction_address_start, s->instruction_address_end);
+    }
+    for (int i = 0; i < structs->count; i++) {
+        struct_t* s = CALL(structs, get, i);
+        printf("Defined struct %s with members:\n", s->identifier->chars);
+        for (int j = 0; j < s->memberCount; j++) {
+            printf("  %s at offset %lu with size %lu\n", s->members[j].identifier->chars, s->members[j].offset, s->members[j].size);
+        }
+    }
+    return (dbg_info_t){funcs, structs, files, lines, strFactory};
 }
 
 line_t* get_current_line(dbg_info_t* info, unsigned long long rip) {
     for (int i = 0; i < info->lines->count; i++) {
-        line_t *line = info->lines->get(info->lines, i);
+        line_t *line = CALL(info->lines, get, i);
         if (MAP_TEXT_START + line->instruction_address_start <= rip && rip < MAP_TEXT_START + line->instruction_address_end) {
             return line;
         }
@@ -247,7 +299,7 @@ line_t* get_current_line(dbg_info_t* info, unsigned long long rip) {
 int set_line_pos(pANTLR3_VECTOR files) {
     int sum = 0;
     for (int i = 0; i < files->count; i++) {
-        source_file_t *file = files->get(files, i);
+        source_file_t *file = CALL(files, get, i);
         int lines = 0;
         while (!feof(file->file)) {
             if (fgetc(file->file) == '\n') {
@@ -266,7 +318,7 @@ int set_line_pos(pANTLR3_VECTOR files) {
             }
         }
         for (int l = 0; l < file->lines->count; l++) {
-            line_t* line = file->lines->get(file->lines, l);
+            line_t* line = CALL(file->lines, get, l);
             line->pos = positions[line->line - 1];
         }
         sum += lines;
@@ -282,7 +334,7 @@ long set_breakpoint(pid_t child, long addr) {
 
 void init_line_breakpoints(breakpoint_t* breakpoints, pANTLR3_VECTOR lines, pid_t child) {
     for (int i = 0; i < lines->count; i++) {
-        breakpoints[i].addr = ((line_t *)lines->get(lines, i))->instruction_address_start + MAP_TEXT_START;
+        breakpoints[i].addr = CAST_CALL(line_t *, lines, get, i)->instruction_address_start + MAP_TEXT_START;
         breakpoints[i].data = ptrace(PTRACE_PEEKDATA, child, breakpoints[i].addr, NULL);
     }
 }
@@ -372,7 +424,7 @@ int main(int argc, char *argv[]) {
             ptrace(PTRACE_CONT, child, NULL, NULL);
             wait(&status);
         }
-        if (strncmp(cmd, "breakpoint", sizeof(cmd)) == 0 || strncmp(cmd, "b", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "breakpoint", "b")) {
             long addr;
             if (strlen(arg1) == 0 || !parse_address(arg1, child, &addr, &info)) {
                 printf("Wrong argument format, expected: breakpoint address\n");
@@ -387,22 +439,22 @@ int main(int argc, char *argv[]) {
             ptrace(PTRACE_SETREGS, child, NULL, &regs);
         }
 
-        if (strncmp(cmd, "registers", sizeof(cmd)) == 0 || strncmp(cmd, "regs", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "registers", "regs")) {
             struct user_regs_struct regs;
             ptrace(PTRACE_GETREGS, child, NULL, &regs);
             print_regs(&regs, stdout);
         }
 
-        if (strncmp(cmd, "nexti", sizeof(cmd)) == 0 || strncmp(cmd, "ni", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "nexti", "ni")) {
             printf("Stepping single instruction...\n");
             ptrace(PTRACE_SINGLESTEP, child, NULL, NULL);
             wait(&status);
         }
 
-        if (strncmp(cmd, "next", sizeof(cmd)) == 0 || strncmp(cmd, "n", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "next", "n")) {
             printf("Stepping single line...\n");
             for (int i = 0; i < info.lines->count; i++) {
-                line_t* line = info.lines->get(info.lines, i);
+                line_t* line = CALL(info.lines, get, i);
                 if (current != NULL && current->line == line->line) {
                     continue;
                 }
@@ -418,7 +470,7 @@ int main(int argc, char *argv[]) {
             ptrace(PTRACE_SETREGS, child, NULL, &regs);
         }
 
-        if (strncmp(cmd, "read", sizeof(cmd)) == 0 || strncmp(cmd, "r", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "read", "r")) {
             long addr;
             long bytes;
             if (strlen(arg1) == 0 || strlen(arg2) == 0) {
@@ -448,7 +500,7 @@ int main(int argc, char *argv[]) {
             putchar('\n');
         }
 
-        if (strncmp(cmd, "disassemble", sizeof(cmd)) == 0 || strncmp(cmd, "disas", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "disassemble", "disas")) {
             long addr;
             long bytes;
             if (strlen(arg1) == 0 || strlen(arg2) == 0) {
@@ -482,15 +534,15 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (strncmp(cmd, "locals", sizeof(cmd)) == 0 || strncmp(cmd, "l", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "locals", "l")) {
             if (current == NULL) {
                 printf("No locals at this position.\n");
                 continue;
             }
             for (int i = 0; i < current->func->locals->count; i++) {
-                local_t* local = current->func->locals->get(current->func->locals, i);
+                local_t* local = CALL(current->func->locals, get, i);
                 ptrace(PTRACE_GETREGS, child, NULL, &regs);
-                if (local->flags & ARRAY_FLAG) {
+                if (local->flags & ARRAY_TYPE) {
                     printf("%s is array of ", local->identifier);
                     switch (local->size) {
                         case sizeof(long): printf("longs"); break;
@@ -499,6 +551,27 @@ int main(int argc, char *argv[]) {
                         case sizeof(char): printf("bytes"); break;
                     }
                     printf(" at 0x%lX\n", ptrace(PTRACE_PEEKDATA, child, regs.rbp + local->rbp_offset, NULL));
+                    continue;
+                }
+                if ((local->flags & PRIMITIVE_TYPE) == 0) {
+                    ptrace(PTRACE_GETREGS, child, NULL, &regs);
+                    size_t addr = regs.rbp + local->rbp_offset;
+                    if (local->flags & POINTER) {
+                        addr = ptrace(PTRACE_PEEKDATA, child, addr, NULL);
+                    }
+                    printf("%s = %s(", local->identifier, local->type->identifier->chars);
+                    for (int j = 0; j < local->type->memberCount; j++) {
+                        member_t *member = &local->type->members[j];
+                        long value;
+                        switch (member->size) {
+                            case sizeof(long): value = ptrace(PTRACE_PEEKDATA, child, addr + member->offset, NULL);
+                            case sizeof(int): value = (int)ptrace(PTRACE_PEEKDATA, child, addr + member->offset, NULL);
+                            case sizeof(short): value = (short)ptrace(PTRACE_PEEKDATA, child, addr + member->offset, NULL);
+                            case sizeof(char): value = (char)ptrace(PTRACE_PEEKDATA, child, addr + member->offset, NULL);
+                        }
+                        printf("%s = %ld", member->identifier->chars, value);
+                        printf(j == local->type->memberCount - 1 ? ")\n" : ", ");
+                    }
                     continue;
                 }
                 
@@ -529,7 +602,7 @@ int main(int argc, char *argv[]) {
         }
 #endif
 
-        if (strncmp(cmd, "quit", sizeof(cmd)) == 0 || strncmp(cmd, "q", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "quit", "q")) {
             kill(child, SIGTERM);
             return 0;
         }

@@ -31,8 +31,9 @@ int main(int argc, char *argv[]) {
     }
     printArr(brr, 10);
     printf(" -> bubbleSort -> ");
-    bubbleSort(brr, 10);
+    bubbleSort(brr, sizeof(brr)/sizeof(brr[0]));
     printArr(brr, 10);
     putchar('\n');
     printf("mul(420, 1337) = %ld\n", mul(420, 1337));
+    hello();
 }

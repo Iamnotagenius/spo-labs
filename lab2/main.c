@@ -14,10 +14,9 @@ typedef struct {
 } call_info_t;
 
 void printExpr(pANTLR3_BASE_TREE exprTree, FILE* output) {
-    pANTLR3_BASE_TREE child = exprTree->getChild(exprTree, 0);
-    if (child && child->getType(child) == LParen) {
-        pANTLR3_VECTOR args = child->children;
-        fprintf(output, "%s(", exprTree->getText(exprTree)->chars);
+    if (exprTree->getType(exprTree) == LParen) {
+        pANTLR3_VECTOR args = exprTree->children;
+        fprintf(output, "(");
         if (args && args->count > 0) {
             printExpr(args->get(args, 0), output);
             for (ANTLR3_UINT32 i = 1; i < args->count; i++) {
@@ -30,7 +29,11 @@ void printExpr(pANTLR3_BASE_TREE exprTree, FILE* output) {
     }
     if (exprTree->getChildCount(exprTree) == 1) {
         fprintf(output, "%s", exprTree->getText(exprTree)->chars);
-        printExpr(exprTree->getChild(exprTree, 0), output);
+        pANTLR3_BASE_TREE child = exprTree->getChild(exprTree, 0);
+        if (exprTree->getType(exprTree) == Identifier && child->getType(child) == Identifier) {
+            fprintf(output, ".");
+        }
+        printExpr(child, output);
         return;
     }
     
@@ -153,7 +156,11 @@ void printEdge(FILE* output, cfg_node_t* node, step_t step) {
         printExpr(node->u.loop.cond, output);
         break;
     case ASSIGNMENT:
-        fprintf(output, "%s = ", node->u.assignment.identifier);
+        fprintf(output, "%s", node->u.assignment.identifier);
+        if (node->u.assignment.arrayIndexExpr != NULL) {
+            printExpr(node->u.assignment.arrayIndexExpr, output);
+        }
+        fprintf(output, " = ");
         printExpr(node->u.assignment.expr, output);
     }
     fprintf(output, "\"]\n");
@@ -252,7 +259,8 @@ int main(int argc, char *argv[]) {
             }
             return 1;
         }
-        pANTLR3_VECTOR cfgs = createCfgs(ast, (pANTLR3_UINT8)argv[i]);
+        source_info_t info = createCfgs(ast, (pANTLR3_UINT8)argv[i]);
+        pANTLR3_VECTOR cfgs = info.cfgs;
         for (ANTLR3_UINT32 i = 0; i < cfgs->count; i++) {
             cfg_t* cfg = cfgs->elements[i].element;
             if (cfg->errors->count > 0) {
@@ -274,5 +282,6 @@ int main(int argc, char *argv[]) {
         fclose(callGraphFile);
         freeAst(ast);
         cfgs->free(cfgs);
+        info.structs->free(info.structs);
     }
 }

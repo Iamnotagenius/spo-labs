@@ -8,6 +8,7 @@ options {
 
 tokens {
     Root;
+    Member;
     Body;
     Signature;
     Arg;
@@ -32,8 +33,13 @@ funcSignature: identifier LParen (argDef (Comma argDef)*)? RParen typeSpec?
 fragment argDef: identifier typeSpec?
     -> ^(Arg identifier typeSpec);
 
-sourceItem: 'function' funcSignature (statement* 'end' 'function')? 
-    -> ^(funcSignature ^(Body statement*)?); 
+sourceItem:
+    Function funcSignature (statement* End Function)? 
+        -> ^(Function ^(funcSignature ^(Body statement*)?))
+    | Struct identifier member* End Struct
+        -> ^(Struct ^(identifier member*)); 
+
+fragment member: typeRef identifier Semi -> ^(Member typeRef identifier);
 
 statement:
     Dim identifier (Comma identifier)* typeSpec -> ^(Dim ^(typeSpec identifier+))
@@ -54,6 +60,7 @@ expr: orExpr;
 unOp: Not | Minus | Tilde;
 addOp: Plus | Minus;
 bitOp: BitOp | Tilde;
+memberAccess: MemberAccess! identifier;
 
 orExpr: andExpr (Or^ andExpr)*;
 andExpr: compExpr (And^ compExpr)*;
@@ -65,7 +72,7 @@ unExpr: (unOp^)? call;
 call: atom (LParen (expr (Comma expr)*)? RParen)? -> ^(atom ^(LParen expr*)?);
 atom:
     LParen expr RParen -> expr
-    |identifier
+    |identifier^ memberAccess?
     |literal
 ;
 
@@ -79,6 +86,8 @@ hex: HexLiteral;  // шестнадцатеричный литерал
 bits: BitsLiteral;  // битовый литерал 
 dec: Integer;  // десятичный литерал 
 boolean: Bool; // булевский литерал 
+Struct: 'struct';
+Function: 'function';
 Dim: 'dim';
 If: 'if';
 Then: 'then';
@@ -89,6 +98,7 @@ Wend: 'wend';
 Break: 'break';
 Loop: 'loop';
 Until: 'until';
+MemberAccess: '.';
 
 End: 'end';
 
