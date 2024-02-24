@@ -1,3 +1,4 @@
+DEBUG_ANTLR3_PATH=/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib
 SOURCES = lib1.c main.c
 ANTLR3_HEADERS=langLexer.h langParser.h
 ANTLR3_SOURCES=langLexer.c langParser.c
@@ -21,8 +22,8 @@ lib/lib1.so: lib1.c $(ANTLR3_SOURCES)
 	${CC} -shared -o lib/lib1.so -fPIC $^
 
 debug: $(SOURCES) $(ANTLR3_SOURCES)
-	${CC} -g $^ -Wl,-rpath=/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)
-	${CC} -g -shared -o lib/lib1.so -fPIC $^ -Wl,-rpath=/home/iamnotagenius/Sources/spo_labs/libantlr3c-3.4/lib/lib $(LIBS)
+	${CC} -g $^ -Wl,-rpath=$(DEBUG_ANTLR3_PATH) $(LIBS)
+	${CC} -g -shared -o lib/lib1.so -fPIC $^ -Wl,-rpath=$(DEBUG_ANTLR3_PATH) $(LIBS)
 
 lab1.zip: $(SOURCES) $(ANTLR3_ARTIFACTS) Makefile lang.g input
 	7z a $@ $?

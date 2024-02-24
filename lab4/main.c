@@ -10,7 +10,6 @@
 #include "xed/xed-syntax-enum.h"
 #include <antlr3defs.h>
 #include <antlr3interfaces.h>
-#include <libunwind-x86_64.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -34,6 +33,7 @@
 
 #ifdef USE_LIBUNWIND
 #include <libunwind.h>
+#include <libunwind-x86_64.h>
 #include <libunwind-ptrace.h>
 #endif
 

@@ -1,4 +1,4 @@
-XED_DIR=/home/iamnotagenius/Sources/intelxed/build/kits/xed-install-base-2023-11-08-lin-x86-64
+XED_DIR=/home/iamnotagenius/Sources/spo-labs/build/kits/xed-install-base-2024-02-24-lin-x86-64
 XED_ARGS=-I$(XED_DIR)/include -L$(XED_DIR)/lib
 SRC=main.c lists.c
 LIBS=-lxed -lantlr3c
