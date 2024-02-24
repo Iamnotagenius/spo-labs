@@ -1,22 +1,11 @@
-#include "xed/xed-address-width-enum.h"
-#include "xed/xed-chip-enum.h"
-#include "xed/xed-common-defs.h"
-#include "xed/xed-decode.h"
-#include "xed/xed-decoded-inst-api.h"
-#include "xed/xed-error-enum.h"
-#include "xed/xed-ild.h"
-#include "xed/xed-init.h"
-#include "xed/xed-machine-mode-enum.h"
-#include "xed/xed-syntax-enum.h"
 #include <antlr3defs.h>
 #include <antlr3interfaces.h>
+#include <antlr3collections.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <xed/xed-decoded-inst.h>
 
 #include <signal.h>
-#include <antlr3collections.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -28,8 +17,8 @@
 #include <sys/wait.h>
 #include <sys/signal.h>
 #include <sys/user.h>
-#include <xed/xed-interface.h>
 #include <unistd.h>
+#include <xed/xed-interface.h>
 
 #ifdef USE_LIBUNWIND
 #include <libunwind.h>
@@ -120,8 +109,14 @@ xed_error_enum_t decode_inst_in_child(xed_decoded_inst_t* xedd, pid_t child, uns
     return xed_decode(xedd, inst, XED_MAX_INSTRUCTION_BYTES);
 }
 
-dbg_info_t read_symbols(char *filename) {
+dbg_info_t read_symbols(const char *filename) {
     FILE* f = fopen(filename, "r");
+    if (f == NULL) {
+        char msg[PATH_MAX + 20];
+        sprintf(msg, "Could not open file %s", filename);
+        perror(msg);
+        return (dbg_info_t){NULL, NULL, NULL};
+    }
     Elf64_Ehdr hdr;
     fread(&hdr, sizeof(Elf64_Ehdr), 1, f);
     if (memcmp(hdr.e_ident, "\x7f" "ELF\x2\x1\x1", 7) != 0) {
@@ -250,8 +245,15 @@ dbg_info_t read_symbols(char *filename) {
             }
             source_file_t* file = find_file(files, source_file);
             if (file == NULL) {
+                FILE *stream = fopen(source_file, "r");
+                if (stream == NULL) {
+                    char msg[PATH_MAX + 20];
+                    sprintf(msg, "Could not open file %s", source_file);
+                    perror(msg);
+                    break;
+                }
                 file = malloc(sizeof(dbg_func_t));
-                *file = (source_file_t){strdup(source_file), fopen(source_file, "r"), antlr3VectorNew(ANTLR3_SIZE_HINT)};
+                *file = (source_file_t){strdup(source_file), stream, antlr3VectorNew(ANTLR3_SIZE_HINT)};
                 CALL(files, add, file, (void (*))free_source_file);
             }
             line_t* l = find_line(lines, source_file, line);
