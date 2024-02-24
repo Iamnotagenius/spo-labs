@@ -151,7 +151,6 @@ dbg_info_t read_symbols(char *filename) {
             continue;
         }
         if (strncmp(&str[shdr[i].sh_name], ".symtab", 7) == 0) {
-            printf("Found section %s at %d\n", &str[shdr[i].sh_name], i);
             symtabhdr = &shdr[i];
             symtab = malloc(shdr[i].sh_size);
             fseek(f, shdr[i].sh_offset, SEEK_SET);
@@ -167,7 +166,6 @@ dbg_info_t read_symbols(char *filename) {
     pANTLR3_STRING_FACTORY strFactory = antlr3StringFactoryNew(ANTLR3_ENC_UTF8);
 
     for (int i = 0; i < symtabhdr->sh_size / sizeof(Elf64_Sym); i++) {
-        printf("Handling '%s'...\n", &strtab[symtab[i].st_name]);
         if (symtab[i].st_info & STT_FUNC) {
             dbg_func_t* f = NULL;
             for (int j = 0; j < funcs->count; j++) {
@@ -272,17 +270,6 @@ dbg_info_t read_symbols(char *filename) {
     free(strtab);
     free(symtab);
 
-    for (int i = 0; i < lines->count; i++) {
-        line_t* s = CALL(lines, get, i);
-        printf("Line %d from 0x%lX to 0x%lX\n", s->line, s->instruction_address_start, s->instruction_address_end);
-    }
-    for (int i = 0; i < structs->count; i++) {
-        struct_t* s = CALL(structs, get, i);
-        printf("Defined struct %s with members:\n", s->identifier->chars);
-        for (int j = 0; j < s->memberCount; j++) {
-            printf("  %s at offset %lu with size %lu\n", s->members[j].identifier->chars, s->members[j].offset, s->members[j].size);
-        }
-    }
     return (dbg_info_t){funcs, structs, files, lines, strFactory};
 }
 
@@ -313,7 +300,6 @@ int set_line_pos(pANTLR3_VECTOR files) {
         while (!feof(file->file)) {
             if (fgetc(file->file) == '\n') {
                 lines++;
-                printf("Newline on %ld, lines is %d\n", ftell(file->file), lines);
                 fgetpos(file->file, &positions[lines]);
             }
         }
@@ -588,7 +574,7 @@ int main(int argc, char *argv[]) {
         }
 
 #ifdef USE_LIBUNWIND
-        if (strncmp(cmd, "backtrace", sizeof(cmd)) == 0 || strncmp(cmd, "bt", sizeof(cmd)) == 0) {
+        if (ONE_OF(strcmp, cmd, "bt", "backtrace")) {
             unw_word_t rsp;
             while (unw_step(&cursor) > 0) {
                 unw_get_reg(&cursor, UNW_REG_SP, &rsp);
@@ -601,6 +587,27 @@ int main(int argc, char *argv[]) {
             }
         }
 #endif
+
+        if (ONE_OF(strcmp, cmd, "h", "help")) {
+            printf("A debugger.\n"
+                    "Available commands:\n"
+                    "  h, help -- print this message\n"
+                    "  q, quit -- exit\n"
+                    "  b, breakpoint ADDRESS -- set the breakpoint on specified ADDRESS and jump to it\n"
+                    "  regs, registers -- print value of registers\n"
+                    "  ni, nexti -- step single instruction\n"
+                    "  n, next -- jump to a beginning of a next line\n"
+                    "  r, read ADDRESS N -- read N bytes from specified ADDRESS and print them\n"
+                    "  disas, disassemble ADDRESS N -- disassemble the code at ADDRESS up to N bytes\n"
+                    "  l, locals -- print values of defined arguments and local variables\n"
+#ifdef USE_LIBUNWIND
+                    "bt, backtrace -- perform a backtrace at current execution position\n"
+#endif
+                    "Adresses can be specified as:\n"
+                    " - numbers (decimal or hex with 0x prefix)\n"
+                    " - symbols (name of a function)\n"
+                    " - source lines in format file:LINE\n");
+        }
 
         if (ONE_OF(strcmp, cmd, "quit", "q")) {
             kill(child, SIGTERM);
