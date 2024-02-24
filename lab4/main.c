@@ -1,7 +1,7 @@
 #include <antlr3defs.h>
 #include <antlr3interfaces.h>
 #include <antlr3collections.h>
-#include <stdarg.h>
+#include <linux/limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -30,8 +30,6 @@
 #include "../macros.h"
 #include "../lab3/lib3.h"
 
-#define MAP_TEXT_START 0x555555554000
-
 typedef struct {
     pANTLR3_VECTOR funcs;
     pANTLR3_VECTOR structs;
@@ -48,7 +46,7 @@ typedef struct {
 void print_regs(struct user_regs_struct* regs, FILE* output);
 long read_reg(pid_t child, char reg[4]);
 
-bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info) {
+bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info, size_t seg_start) {
     if (str[0] == '[') {
         char reg[4];
         sscanf(str, "[%3s]", reg);
@@ -61,7 +59,7 @@ bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info) {
             for (int i = 0; i < info->funcs->count; i++) {
                 dbg_func_t* f = CALL(info->funcs, get, i);
                 if (strcmp(str, f->identifier) == 0) {
-                    *addr = MAP_TEXT_START + f->instruction_address;
+                    *addr = seg_start + f->instruction_address;
                     return true;
                 }
             }
@@ -74,7 +72,7 @@ bool parse_address(char* str, pid_t child, long* addr, dbg_info_t* info) {
                     for (int j = 0; j < f->lines->count; j++) {
                         line_t* line = CALL(f->lines, get, j);
                         if (line->line >= line_number) {
-                            *addr = MAP_TEXT_START + line->instruction_address_start;
+                            *addr = seg_start + line->instruction_address_start;
                             return true;
                         }
                     }
@@ -112,7 +110,7 @@ xed_error_enum_t decode_inst_in_child(xed_decoded_inst_t* xedd, pid_t child, uns
 dbg_info_t read_symbols(const char *filename) {
     FILE* f = fopen(filename, "r");
     if (f == NULL) {
-        char msg[PATH_MAX + 20];
+        char msg[PATH_MAX + 22];
         sprintf(msg, "Could not open file %s", filename);
         perror(msg);
         return (dbg_info_t){NULL, NULL, NULL};
@@ -275,10 +273,10 @@ dbg_info_t read_symbols(const char *filename) {
     return (dbg_info_t){funcs, structs, files, lines, strFactory};
 }
 
-line_t* get_current_line(dbg_info_t* info, unsigned long long rip) {
+line_t* get_current_line(dbg_info_t* info, unsigned long long rip, size_t seg_start) {
     for (int i = 0; i < info->lines->count; i++) {
         line_t *line = CALL(info->lines, get, i);
-        if (MAP_TEXT_START + line->instruction_address_start <= rip && rip < MAP_TEXT_START + line->instruction_address_end) {
+        if (seg_start + line->instruction_address_start <= rip && rip < seg_start + line->instruction_address_end) {
             return line;
         }
     }
@@ -320,11 +318,27 @@ long set_breakpoint(pid_t child, long addr) {
     return data;
 }
 
-void init_line_breakpoints(breakpoint_t* breakpoints, pANTLR3_VECTOR lines, pid_t child) {
+void init_line_breakpoints(breakpoint_t* breakpoints, pANTLR3_VECTOR lines, pid_t child, size_t seg_start) {
     for (int i = 0; i < lines->count; i++) {
-        breakpoints[i].addr = CAST_CALL(line_t *, lines, get, i)->instruction_address_start + MAP_TEXT_START;
+        breakpoints[i].addr = CAST_CALL(line_t *, lines, get, i)->instruction_address_start + seg_start;
         breakpoints[i].data = ptrace(PTRACE_PEEKDATA, child, breakpoints[i].addr, NULL);
     }
+}
+
+size_t get_seg_start(pid_t pid, const char *file) {
+    char maps_name[PATH_MAX + 1];
+    char buff[PATH_MAX + 1], *real = realpath(file, buff);
+    sprintf(maps_name, "/proc/%d/maps", pid);
+    FILE *maps = fopen(maps_name, "r");
+    while (!feof(maps)) {
+        char source[PATH_MAX + 1];
+        size_t start;
+        fscanf(maps, "%16lx-%*16lx %*4s %*s %*s %*s %4096s ", &start, source);
+        if (strcmp(real, source) == 0) {
+            return start;
+        }
+    }
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -364,6 +378,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
     dbg_info_t info = read_symbols(argv[1]);
+    size_t seg_start = get_seg_start(child, argv[1]);
     set_line_pos(info.files);
     xed_decoded_inst_t xedd;
     xed_tables_init();
@@ -377,12 +392,12 @@ int main(int argc, char *argv[]) {
     char arg2[1024] = {0};
     struct user_regs_struct regs;
     breakpoint_t *line_breakpoints = calloc(info.lines->count, sizeof(breakpoint_t));
-    init_line_breakpoints(line_breakpoints, info.lines, child);
+    init_line_breakpoints(line_breakpoints, info.lines, child, seg_start);
     line_t *current = NULL;
     wait(&status);
     while (!WIFEXITED(status)) {
         ptrace(PTRACE_GETREGS, child, NULL, &regs);
-        current = get_current_line(&info, regs.rip);
+        current = get_current_line(&info, regs.rip, seg_start);
         if (current != NULL) {
             char buff[128], *res;
             printf("On line %d\n", current->line);
@@ -414,7 +429,7 @@ int main(int argc, char *argv[]) {
         }
         if (ONE_OF(strcmp, cmd, "breakpoint", "b")) {
             long addr;
-            if (strlen(arg1) == 0 || !parse_address(arg1, child, &addr, &info)) {
+            if (strlen(arg1) == 0 || !parse_address(arg1, child, &addr, &info, seg_start)) {
                 printf("Wrong argument format, expected: breakpoint address\n");
                 continue;
             }
@@ -465,7 +480,7 @@ int main(int argc, char *argv[]) {
                 printf("Expected two arguments\n");
                 continue;
             }
-            if (!parse_address(arg1, child, &addr, &info)) {
+            if (!parse_address(arg1, child, &addr, &info, seg_start)) {
                 printf("Wrong address format.\n");
                 continue;
             }
@@ -495,7 +510,7 @@ int main(int argc, char *argv[]) {
                 printf("Expected two arguments\n");
                 continue;
             }
-            if (!parse_address(arg1, child, &addr, &info)) {
+            if (!parse_address(arg1, child, &addr, &info, seg_start)) {
                 printf("Wrong address format.\n");
                 continue;
             }
